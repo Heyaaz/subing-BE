@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: subing
+  config:
+    import: optional:file:.env[.properties]
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # 개발: update, 운영: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        show_sql: true
+        default_batch_fetch_size: 100
+    open-in-view: false
+
+  security:
+    oauth2:
+      client:
+        registration: {}  # Phase 2: 소셜 로그인
+
+  # Spring AI OpenAI 설정
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+          max-tokens: 2000
+          temperature: 0.7
+
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-here-please-change-in-production}
+  access-token-validity: 86400000    # 24시간 (개발 환경)
+  refresh-token-validity: 604800000  # 7일
+
+# 로깅
+logging:
+  level:
+    com.project.subing: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# 서버 설정
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
