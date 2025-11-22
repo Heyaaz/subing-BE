@@ -5,6 +5,8 @@ import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.service.entity.SubscriptionPlan;
 import com.project.subing.dto.service.*;
 import com.project.subing.dto.service.ServiceComparisonResponse.ComparisonSummary;
+import com.project.subing.exception.business.MissingServicesException;
+import com.project.subing.exception.entity.ServiceNotFoundException;
 import com.project.subing.repository.ServiceRepository;
 import com.project.subing.repository.SubscriptionPlanRepository;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +39,7 @@ public class ServiceService {
     
     public ServiceResponse getServiceById(Long serviceId) {
         ServiceEntity service = serviceRepository.findById(serviceId)
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다: " + serviceId));
+                .orElseThrow(() -> new ServiceNotFoundException(serviceId));
         return convertEntityToDto(service);
     }
     
@@ -55,9 +57,9 @@ public class ServiceService {
     
     public ServiceComparisonResponse compareServices(ServiceComparisonRequest request) {
         List<ServiceEntity> services = serviceRepository.findAllById(request.getServiceIds());
-        
+
         if (services.size() != request.getServiceIds().size()) {
-            throw new RuntimeException("일부 서비스를 찾을 수 없습니다");
+            throw new MissingServicesException(request.getServiceIds(), services);
         }
         
         List<ServiceResponse> serviceResponses = new ArrayList<>();
@@ -197,7 +199,7 @@ public class ServiceService {
     @Transactional
     public ServiceResponse updateService(Long serviceId, ServiceUpdateRequest request) {
         ServiceEntity service = serviceRepository.findById(serviceId)
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다: " + serviceId));
+                .orElseThrow(() -> new ServiceNotFoundException(serviceId));
 
         service.updateInfo(
             request.getServiceName(),
@@ -216,7 +218,7 @@ public class ServiceService {
     @Transactional
     public void deleteService(Long serviceId) {
         ServiceEntity service = serviceRepository.findById(serviceId)
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다: " + serviceId));
+                .orElseThrow(() -> new ServiceNotFoundException(serviceId));
 
         serviceRepository.delete(service);
         log.info("서비스 삭제됨: {}", serviceId);

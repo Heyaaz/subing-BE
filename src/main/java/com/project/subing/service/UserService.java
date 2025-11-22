@@ -10,6 +10,9 @@ import com.project.subing.dto.user.LoginRequest;
 import com.project.subing.dto.user.SignupRequest;
 import com.project.subing.dto.user.UserResponse;
 import com.project.subing.dto.user.UserTierInfoResponse;
+import com.project.subing.exception.business.DuplicateEmailException;
+import com.project.subing.exception.business.InvalidCredentialsException;
+import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.repository.UserRepository;
 import com.project.subing.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +36,7 @@ public class UserService {
     public UserResponse signup(SignupRequest request) {
         // 이메일 중복 검사
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("이미 사용 중인 이메일입니다.");
+            throw new DuplicateEmailException(request.getEmail());
         }
 
         // 사용자 생성 (BCrypt로 비밀번호 암호화)
@@ -68,11 +71,11 @@ public class UserService {
     public UserResponse login(LoginRequest request) {
         // 이메일로 사용자 조회
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("이메일 또는 비밀번호가 올바르지 않습니다."));
+                .orElseThrow(() -> new InvalidCredentialsException());
 
         // 비밀번호 검증 (BCrypt 사용)
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("이메일 또는 비밀번호가 올바르지 않습니다.");
+            throw new InvalidCredentialsException();
         }
 
         // JWT 토큰 생성 (role 포함)
@@ -96,7 +99,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserTierInfoResponse getUserTierInfo(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         UserTierUsage usage = tierLimitService.getCurrentMonthUsage(userId);
         int remainingGpt = tierLimitService.getRemainingGptRecommendations(userId);
@@ -118,13 +121,13 @@ public class UserService {
     @Transactional(readOnly = true)
     public AdminUserResponse getUserByIdForAdmin(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + userId));
+                .orElseThrow(() -> new UserNotFoundException(userId));
         return AdminUserResponse.from(user);
     }
 
     public AdminUserResponse updateUserByAdmin(Long userId, UserUpdateRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + userId));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         if (request.getTier() != null) {
             user.upgradeTier(request.getTier());
@@ -138,7 +141,7 @@ public class UserService {
 
     public void deleteUserByAdmin(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + userId));
+                .orElseThrow(() -> new UserNotFoundException(userId));
         userRepository.delete(user);
     }
 }

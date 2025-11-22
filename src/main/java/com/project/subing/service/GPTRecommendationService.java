@@ -10,6 +10,13 @@ import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.dto.recommendation.QuizRequest;
 import com.project.subing.dto.recommendation.RecommendationResponse;
+import com.project.subing.exception.entity.RecommendationNotFoundException;
+import com.project.subing.exception.entity.ServiceNotFoundException;
+import com.project.subing.exception.entity.UserNotFoundException;
+import com.project.subing.exception.external.GptApiException;
+import com.project.subing.exception.external.GptParsingException;
+import com.project.subing.exception.external.RecommendationSaveException;
+import com.project.subing.exception.tier.GptRecommendationLimitException;
 import com.project.subing.repository.RecommendationClickRepository;
 import com.project.subing.repository.RecommendationFeedbackRepository;
 import com.project.subing.repository.RecommendationResultRepository;
@@ -52,7 +59,7 @@ public class GPTRecommendationService {
     public RecommendationResponse getRecommendations(Long userId, QuizRequest quiz) {
         // 0. 티어 제한 체크
         if (!tierLimitService.canUseGptRecommendation(userId)) {
-            throw new RuntimeException("GPT 추천 사용 횟수를 초과했습니다. PRO 티어로 업그레이드하세요.");
+            throw new GptRecommendationLimitException();
         }
 
         // 0-1. 사용자 성향 데이터 조회 (Optional)
@@ -91,7 +98,7 @@ public class GPTRecommendationService {
     public SseEmitter getRecommendationsStream(Long userId, QuizRequest quiz) {
         // 0. 티어 제한 체크
         if (!tierLimitService.canUseGptRecommendation(userId)) {
-            throw new RuntimeException("GPT 추천 사용 횟수를 초과했습니다. PRO 티어로 업그레이드하세요.");
+            throw new GptRecommendationLimitException();
         }
 
         // SSE Emitter 생성 (타임아웃 5분)
@@ -209,10 +216,10 @@ public class GPTRecommendationService {
 
     public void saveFeedback(Long recommendationId, Long userId, Boolean isHelpful, String comment) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         RecommendationResult recommendationResult = recommendationResultRepository.findById(recommendationId)
-                .orElseThrow(() -> new RuntimeException("추천 결과를 찾을 수 없습니다."));
+                .orElseThrow(() -> new RecommendationNotFoundException(recommendationId));
 
         // 이미 피드백을 남긴 경우 업데이트
         RecommendationFeedback feedback = recommendationFeedbackRepository
@@ -237,13 +244,13 @@ public class GPTRecommendationService {
      */
     public void trackClick(Long recommendationId, Long userId, Long serviceId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         RecommendationResult recommendationResult = recommendationResultRepository.findById(recommendationId)
-                .orElseThrow(() -> new RuntimeException("추천 결과를 찾을 수 없습니다."));
+                .orElseThrow(() -> new RecommendationNotFoundException(recommendationId));
 
         ServiceEntity service = serviceRepository.findById(serviceId)
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다."));
+                .orElseThrow(() -> new ServiceNotFoundException(serviceId));
 
         RecommendationClick click = RecommendationClick.builder()
                 .recommendationResult(recommendationResult)
@@ -348,7 +355,7 @@ public class GPTRecommendationService {
                     .getText();
 
         } catch (Exception e) {
-            throw new RuntimeException("GPT API 호출 실패: " + e.getMessage(), e);
+            throw new GptApiException(e);
         }
     }
 
@@ -356,14 +363,14 @@ public class GPTRecommendationService {
         try {
             return objectMapper.readValue(jsonContent, RecommendationResponse.class);
         } catch (Exception e) {
-            throw new RuntimeException("GPT 응답 파싱 실패: " + e.getMessage(), e);
+            throw new GptParsingException(e);
         }
     }
 
     private void saveRecommendationResult(Long userId, QuizRequest quiz, RecommendationResponse result, PromptVersion promptVersion) {
         try {
             User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                    .orElseThrow(() -> new UserNotFoundException(userId));
 
             String quizJson = objectMapper.writeValueAsString(quiz);
             String resultJson = objectMapper.writeValueAsString(result);
@@ -376,8 +383,10 @@ public class GPTRecommendationService {
                     .build();
 
             recommendationResultRepository.save(entity);
+        } catch (UserNotFoundException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("추천 결과 저장 실패: " + e.getMessage(), e);
+            throw new RecommendationSaveException(e);
         }
     }
 }

@@ -4,6 +4,7 @@ import com.project.subing.dto.common.ApiResponse;
 import com.project.subing.dto.optimization.CheaperAlternativeResponse;
 import com.project.subing.dto.optimization.DuplicateServiceGroupResponse;
 import com.project.subing.dto.optimization.OptimizationSuggestionResponse;
+import com.project.subing.exception.tier.OptimizationCheckLimitException;
 import com.project.subing.service.SubscriptionOptimizationService;
 import com.project.subing.service.TierLimitService;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class OptimizationController {
 
         // 티어 제한 체크
         if (!tierLimitService.canUseOptimizationCheck(userId)) {
-            throw new RuntimeException("최적화 체크 사용 횟수를 초과했습니다. PRO 티어로 업그레이드하세요.");
+            throw new OptimizationCheckLimitException();
         }
 
         // 중복 서비스 감지

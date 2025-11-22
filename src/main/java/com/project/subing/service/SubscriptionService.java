@@ -5,6 +5,9 @@ import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.dto.subscription.SubscriptionRequest;
 import com.project.subing.dto.subscription.SubscriptionResponse;
+import com.project.subing.exception.entity.ServiceNotFoundException;
+import com.project.subing.exception.entity.SubscriptionNotFoundException;
+import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.repository.ServiceRepository;
 import com.project.subing.repository.UserRepository;
 import com.project.subing.repository.UserSubscriptionRepository;
@@ -27,11 +30,11 @@ public class SubscriptionService {
     public SubscriptionResponse createSubscription(Long userId, SubscriptionRequest request) {
         // 사용자 조회
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-        
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
         // 서비스 조회
         ServiceEntity service = serviceRepository.findById(request.getServiceId())
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다."));
+                .orElseThrow(() -> new ServiceNotFoundException(request.getServiceId()));
         
         // 구독 생성
         UserSubscription subscription = UserSubscription.builder()
@@ -136,39 +139,39 @@ public class SubscriptionService {
     
     public SubscriptionResponse updateSubscription(Long id, SubscriptionRequest request) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("구독을 찾을 수 없습니다."));
-        
+                .orElseThrow(() -> new SubscriptionNotFoundException(id));
+
         // 필드 업데이트
         subscription.updatePrice(request.getMonthlyPrice());
         subscription.setPlanName(request.getPlanName());
         subscription.setBillingDate(request.getBillingDate());
         subscription.setBillingCycle(request.getBillingCycle());
         subscription.setNotes(request.getNotes());
-        
+
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
-        
+
         return convertToResponse(savedSubscription);
     }
-    
+
     public void deleteSubscription(Long id) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("구독을 찾을 수 없습니다."));
-        
+                .orElseThrow(() -> new SubscriptionNotFoundException(id));
+
         userSubscriptionRepository.delete(subscription);
     }
-    
+
     public SubscriptionResponse toggleSubscriptionStatus(Long id, Boolean isActive) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("구독을 찾을 수 없습니다."));
-        
+                .orElseThrow(() -> new SubscriptionNotFoundException(id));
+
         if (isActive) {
             subscription.reactivate();
         } else {
             subscription.cancel();
         }
-        
+
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
-        
+
         return convertToResponse(savedSubscription);
     }
     

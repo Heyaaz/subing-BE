@@ -7,6 +7,12 @@ import com.project.subing.dto.review.ReviewCreateRequest;
 import com.project.subing.dto.review.ReviewResponse;
 import com.project.subing.dto.review.ReviewUpdateRequest;
 import com.project.subing.dto.review.ServiceRatingResponse;
+import com.project.subing.exception.auth.ReviewOwnershipException;
+import com.project.subing.exception.business.DuplicateReviewException;
+import com.project.subing.exception.business.InvalidRatingException;
+import com.project.subing.exception.entity.ReviewNotFoundException;
+import com.project.subing.exception.entity.ServiceNotFoundException;
+import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.repository.ServiceRepository;
 import com.project.subing.repository.ServiceReviewRepository;
 import com.project.subing.repository.UserRepository;
@@ -32,19 +38,19 @@ public class ReviewService {
     public ReviewResponse createReview(Long userId, ReviewCreateRequest request) {
         // 이미 리뷰를 작성했는지 확인
         if (reviewRepository.existsByUserIdAndServiceId(userId, request.getServiceId())) {
-            throw new RuntimeException("이미 해당 서비스에 리뷰를 작성하셨습니다.");
+            throw new DuplicateReviewException(userId, request.getServiceId());
         }
 
         // 평점 유효성 검사
         if (request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
-            throw new RuntimeException("평점은 1~5 사이의 값이어야 합니다.");
+            throw new InvalidRatingException(request.getRating());
         }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         ServiceEntity service = serviceRepository.findById(request.getServiceId())
-                .orElseThrow(() -> new RuntimeException("서비스를 찾을 수 없습니다: " + request.getServiceId()));
+                .orElseThrow(() -> new ServiceNotFoundException(request.getServiceId()));
 
         ServiceReview review = ServiceReview.builder()
                 .user(user)
@@ -75,23 +81,23 @@ public class ReviewService {
 
     public ReviewResponse getReviewById(Long reviewId) {
         ServiceReview review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("리뷰를 찾을 수 없습니다: " + reviewId));
+                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
         return ReviewResponse.from(review);
     }
 
     @Transactional
     public ReviewResponse updateReview(Long userId, Long reviewId, ReviewUpdateRequest request) {
         ServiceReview review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("리뷰를 찾을 수 없습니다: " + reviewId));
+                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
 
         // 본인 리뷰인지 확인
         if (!review.isOwnedBy(userId)) {
-            throw new RuntimeException("본인이 작성한 리뷰만 수정할 수 있습니다.");
+            throw new ReviewOwnershipException(reviewId, userId);
         }
 
         // 평점 유효성 검사
         if (request.getRating() != null && (request.getRating() < 1 || request.getRating() > 5)) {
-            throw new RuntimeException("평점은 1~5 사이의 값이어야 합니다.");
+            throw new InvalidRatingException(request.getRating());
         }
 
         review.updateReview(request.getRating(), request.getContent());
@@ -103,11 +109,11 @@ public class ReviewService {
     @Transactional
     public void deleteReview(Long userId, Long reviewId) {
         ServiceReview review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("리뷰를 찾을 수 없습니다: " + reviewId));
+                .orElseThrow(() -> new ReviewNotFoundException(reviewId));
 
         // 본인 리뷰인지 확인
         if (!review.isOwnedBy(userId)) {
-            throw new RuntimeException("본인이 작성한 리뷰만 삭제할 수 있습니다.");
+            throw new ReviewOwnershipException(reviewId, userId);
         }
 
         reviewRepository.delete(review);

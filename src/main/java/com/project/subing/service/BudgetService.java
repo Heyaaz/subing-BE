@@ -2,6 +2,9 @@ package com.project.subing.service;
 
 import com.project.subing.domain.budget.entity.Budget;
 import com.project.subing.domain.user.entity.User;
+import com.project.subing.exception.auth.UnauthorizedAccessException;
+import com.project.subing.exception.entity.BudgetNotFoundException;
+import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.repository.BudgetRepository;
 import com.project.subing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +25,7 @@ public class BudgetService {
 
     public Budget setBudget(Long userId, Integer year, Integer month, Long monthlyLimit) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
         // 기존 예산이 있으면 업데이트, 없으면 생성
         Optional<Budget> existingBudget = budgetRepository.findByUser_IdAndYearAndMonth(userId, year, month);
@@ -60,10 +63,10 @@ public class BudgetService {
 
     public void deleteBudget(Long budgetId, Long userId) {
         Budget budget = budgetRepository.findById(budgetId)
-                .orElseThrow(() -> new RuntimeException("예산을 찾을 수 없습니다."));
+                .orElseThrow(() -> new BudgetNotFoundException(budgetId));
 
         if (!budget.getUser().getId().equals(userId)) {
-            throw new RuntimeException("권한이 없습니다.");
+            throw new UnauthorizedAccessException("예산 삭제 권한이 없습니다.");
         }
 
         budgetRepository.delete(budget);
