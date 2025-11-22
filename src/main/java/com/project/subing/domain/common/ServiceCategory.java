@@ -2,6 +2,7 @@ package com.project.subing.domain.common;
 
 public enum ServiceCategory {
     OTT("OTT"),
+    LIFE("생활"),
     AI("AI"),
     MUSIC("음악"),
     CLOUD("클라우드"),
