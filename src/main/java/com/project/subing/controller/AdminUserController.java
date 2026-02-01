@@ -1,7 +1,9 @@
 package com.project.subing.controller;
 
+import com.project.subing.domain.user.entity.UserTier;
 import com.project.subing.dto.admin.AdminUserResponse;
 import com.project.subing.dto.admin.UserUpdateRequest;
+import com.project.subing.service.TierLimitService;
 import com.project.subing.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +18,7 @@ import java.util.List;
 public class AdminUserController {
 
     private final UserService userService;
+    private final TierLimitService tierLimitService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -45,5 +48,14 @@ public class AdminUserController {
     public ResponseEntity<Void> deleteUser(@PathVariable Long userId) {
         userService.deleteUserByAdmin(userId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{userId}/tier")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> updateUserTier(
+            @PathVariable Long userId,
+            @RequestParam UserTier newTier) {
+        tierLimitService.upgradeTier(userId, newTier);
+        return ResponseEntity.ok().build();
     }
 }

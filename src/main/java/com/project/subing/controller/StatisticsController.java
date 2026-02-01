@@ -6,6 +6,7 @@ import com.project.subing.dto.statistics.MonthlyExpenseResponse;
 import com.project.subing.service.StatisticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,18 +16,19 @@ public class StatisticsController {
     
     private final StatisticsService statisticsService;
     
-    @GetMapping("/monthly/{userId}")
+    @GetMapping("/monthly")
     public ResponseEntity<ApiResponse<MonthlyExpenseResponse>> getMonthlyExpense(
-            @PathVariable Long userId,
+            @AuthenticationPrincipal Long userId,
             @RequestParam(defaultValue = "2025") Integer year,
             @RequestParam(defaultValue = "12") Integer month) {
-        
+
         MonthlyExpenseResponse response = statisticsService.getMonthlyExpense(userId, year, month);
         return ResponseEntity.ok(ApiResponse.success(response, "월별 지출 통계를 조회했습니다."));
     }
-    
-    @GetMapping("/analysis/{userId}")
-    public ResponseEntity<ApiResponse<ExpenseAnalysisResponse>> getExpenseAnalysis(@PathVariable Long userId) {
+
+    @GetMapping("/analysis")
+    public ResponseEntity<ApiResponse<ExpenseAnalysisResponse>> getExpenseAnalysis(
+            @AuthenticationPrincipal Long userId) {
         ExpenseAnalysisResponse response = statisticsService.getExpenseAnalysis(userId);
         return ResponseEntity.ok(ApiResponse.success(response, "지출 분석 결과를 조회했습니다."));
     }
