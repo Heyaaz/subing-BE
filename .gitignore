@@ -38,12 +38,19 @@ out/
 
 ### env ###
 .env
+.env.dev
+.env.prod
+.env.local
+.env.*.local
 
 ### Mac ###
 .DS_Store
 .venv
-*.log
 *.hprof
+
+### Logs ###
+logs/
+*.log
 
 ### Node.js ###
 node_modules/
