@@ -13,6 +13,10 @@ public class UnauthorizedAccessException extends AuthorizationException {
         super(ErrorCode.UNAUTHORIZED_ACCESS);
     }
 
+    public UnauthorizedAccessException(String customMessage) {
+        super(ErrorCode.UNAUTHORIZED_ACCESS, customMessage);
+    }
+
     public UnauthorizedAccessException(String resourceType, Long resourceId) {
         super(ErrorCode.UNAUTHORIZED_ACCESS,
               "권한이 없습니다: " + resourceType + " (ID: " + resourceId + ")");
