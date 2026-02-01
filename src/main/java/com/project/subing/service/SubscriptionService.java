@@ -5,6 +5,7 @@ import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.dto.subscription.SubscriptionRequest;
 import com.project.subing.dto.subscription.SubscriptionResponse;
+import com.project.subing.exception.auth.UnauthorizedAccessException;
 import com.project.subing.exception.entity.ServiceNotFoundException;
 import com.project.subing.exception.entity.SubscriptionNotFoundException;
 import com.project.subing.exception.entity.UserNotFoundException;
@@ -137,11 +138,14 @@ public class SubscriptionService {
                 .collect(Collectors.toList());
     }
     
-    public SubscriptionResponse updateSubscription(Long id, SubscriptionRequest request) {
+    public SubscriptionResponse updateSubscription(Long id, Long principalUserId, SubscriptionRequest request) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
                 .orElseThrow(() -> new SubscriptionNotFoundException(id));
 
-        // 필드 업데이트
+        if (!subscription.getUser().getId().equals(principalUserId)) {
+            throw new UnauthorizedAccessException("구독 수정 권한이 없습니다.");
+        }
+
         subscription.updatePrice(request.getMonthlyPrice());
         subscription.setPlanName(request.getPlanName());
         subscription.setBillingDate(request.getBillingDate());
@@ -153,16 +157,24 @@ public class SubscriptionService {
         return convertToResponse(savedSubscription);
     }
 
-    public void deleteSubscription(Long id) {
+    public void deleteSubscription(Long id, Long principalUserId) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
                 .orElseThrow(() -> new SubscriptionNotFoundException(id));
+
+        if (!subscription.getUser().getId().equals(principalUserId)) {
+            throw new UnauthorizedAccessException("구독 삭제 권한이 없습니다.");
+        }
 
         userSubscriptionRepository.delete(subscription);
     }
 
-    public SubscriptionResponse toggleSubscriptionStatus(Long id, Boolean isActive) {
+    public SubscriptionResponse toggleSubscriptionStatus(Long id, Long principalUserId, Boolean isActive) {
         UserSubscription subscription = userSubscriptionRepository.findById(id)
                 .orElseThrow(() -> new SubscriptionNotFoundException(id));
+
+        if (!subscription.getUser().getId().equals(principalUserId)) {
+            throw new UnauthorizedAccessException("구독 상태 변경 권한이 없습니다.");
+        }
 
         if (isActive) {
             subscription.reactivate();
