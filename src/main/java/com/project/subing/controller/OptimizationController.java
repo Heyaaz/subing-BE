@@ -9,6 +9,7 @@ import com.project.subing.service.SubscriptionOptimizationService;
 import com.project.subing.service.TierLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,33 +25,28 @@ public class OptimizationController {
 
     @GetMapping("/suggestions")
     public ResponseEntity<ApiResponse<OptimizationSuggestionResponse>> getOptimizationSuggestions(
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId) {
 
-        // 티어 제한 체크
         if (!tierLimitService.canUseOptimizationCheck(userId)) {
             throw new OptimizationCheckLimitException();
         }
 
-        // 중복 서비스 감지
         List<SubscriptionOptimizationService.DuplicateServiceGroup> duplicates =
                 optimizationService.detectDuplicateServices(userId);
         List<DuplicateServiceGroupResponse> duplicateResponses = duplicates.stream()
                 .map(DuplicateServiceGroupResponse::from)
                 .collect(Collectors.toList());
 
-        // 저렴한 대안 찾기
         List<SubscriptionOptimizationService.CheaperAlternative> alternatives =
                 optimizationService.findCheaperAlternatives(userId);
         List<CheaperAlternativeResponse> alternativeResponses = alternatives.stream()
                 .map(CheaperAlternativeResponse::from)
                 .collect(Collectors.toList());
 
-        // 총 절약 가능 금액 계산
         int totalPotentialSavings = alternativeResponses.stream()
                 .mapToInt(CheaperAlternativeResponse::getSavings)
                 .sum();
 
-        // 요약 메시지 생성
         String summary = generateSummary(duplicateResponses.size(), alternativeResponses.size(), totalPotentialSavings);
 
         OptimizationSuggestionResponse response = OptimizationSuggestionResponse.builder()
@@ -60,7 +56,6 @@ public class OptimizationController {
                 .summary(summary)
                 .build();
 
-        // 사용량 증가
         tierLimitService.incrementOptimizationCheck(userId);
 
         return ResponseEntity.ok(ApiResponse.success(response, "최적화 제안을 생성했습니다."));
@@ -68,7 +63,7 @@ public class OptimizationController {
 
     @GetMapping("/duplicates")
     public ResponseEntity<ApiResponse<List<DuplicateServiceGroupResponse>>> getDuplicateServices(
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId) {
 
         List<SubscriptionOptimizationService.DuplicateServiceGroup> duplicates =
                 optimizationService.detectDuplicateServices(userId);
@@ -81,7 +76,7 @@ public class OptimizationController {
 
     @GetMapping("/alternatives")
     public ResponseEntity<ApiResponse<List<CheaperAlternativeResponse>>> getCheaperAlternatives(
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId) {
 
         List<SubscriptionOptimizationService.CheaperAlternative> alternatives =
                 optimizationService.findCheaperAlternatives(userId);
