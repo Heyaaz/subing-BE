@@ -10,6 +10,7 @@ import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.dto.recommendation.QuizRequest;
 import com.project.subing.dto.recommendation.RecommendationResponse;
+import com.project.subing.exception.auth.UnauthorizedAccessException;
 import com.project.subing.exception.entity.RecommendationNotFoundException;
 import com.project.subing.exception.entity.ServiceNotFoundException;
 import com.project.subing.exception.entity.UserNotFoundException;
@@ -221,6 +222,10 @@ public class GPTRecommendationService {
         RecommendationResult recommendationResult = recommendationResultRepository.findById(recommendationId)
                 .orElseThrow(() -> new RecommendationNotFoundException(recommendationId));
 
+        if (!recommendationResult.getUser().getId().equals(userId)) {
+            throw new UnauthorizedAccessException("해당 추천 결과에 대한 피드백 권한이 없습니다.");
+        }
+
         // 이미 피드백을 남긴 경우 업데이트
         RecommendationFeedback feedback = recommendationFeedbackRepository
                 .findByRecommendationResult_IdAndUser_Id(recommendationId, userId)
@@ -248,6 +253,10 @@ public class GPTRecommendationService {
 
         RecommendationResult recommendationResult = recommendationResultRepository.findById(recommendationId)
                 .orElseThrow(() -> new RecommendationNotFoundException(recommendationId));
+
+        if (!recommendationResult.getUser().getId().equals(userId)) {
+            throw new UnauthorizedAccessException("해당 추천 결과에 대한 클릭 기록 권한이 없습니다.");
+        }
 
         ServiceEntity service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new ServiceNotFoundException(serviceId));

@@ -8,6 +8,7 @@ import com.project.subing.service.GPTRecommendationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -22,7 +23,7 @@ public class RecommendationController {
 
     @PostMapping("/ai")
     public ResponseEntity<ApiResponse<RecommendationResponse>> getAIRecommendations(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal Long userId,
             @Valid @RequestBody QuizRequest request) {
         RecommendationResponse response = gptRecommendationService.getRecommendations(userId, request);
         return ResponseEntity.ok(ApiResponse.success(response, "AI 추천이 완료되었습니다."));
@@ -33,22 +34,22 @@ public class RecommendationController {
      */
     @PostMapping("/ai/stream")
     public SseEmitter streamAIRecommendations(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal Long userId,
             @Valid @RequestBody QuizRequest request) {
         return gptRecommendationService.getRecommendationsStream(userId, request);
     }
 
-    @GetMapping("/history/{userId}")
+    @GetMapping("/history")
     public ResponseEntity<ApiResponse<List<RecommendationResult>>> getRecommendationHistory(
-            @PathVariable Long userId) {
+            @AuthenticationPrincipal Long userId) {
         List<RecommendationResult> history = gptRecommendationService.getRecommendationHistory(userId);
         return ResponseEntity.ok(ApiResponse.success(history, "추천 기록을 조회했습니다."));
     }
 
     @PostMapping("/{recommendationId}/feedback")
     public ResponseEntity<ApiResponse<Void>> submitFeedback(
+            @AuthenticationPrincipal Long userId,
             @PathVariable Long recommendationId,
-            @RequestParam Long userId,
             @RequestParam Boolean isHelpful,
             @RequestParam(required = false) String comment) {
         gptRecommendationService.saveFeedback(recommendationId, userId, isHelpful, comment);
@@ -57,8 +58,8 @@ public class RecommendationController {
 
     @PostMapping("/{recommendationId}/click")
     public ResponseEntity<ApiResponse<Void>> trackClick(
+            @AuthenticationPrincipal Long userId,
             @PathVariable Long recommendationId,
-            @RequestParam Long userId,
             @RequestParam Long serviceId) {
         gptRecommendationService.trackClick(recommendationId, userId, serviceId);
         return ResponseEntity.ok(ApiResponse.success(null, "클릭이 기록되었습니다."));
