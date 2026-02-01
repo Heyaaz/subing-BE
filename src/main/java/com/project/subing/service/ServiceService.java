@@ -59,7 +59,11 @@ public class ServiceService {
         List<ServiceEntity> services = serviceRepository.findAllById(request.getServiceIds());
 
         if (services.size() != request.getServiceIds().size()) {
-            throw new MissingServicesException(request.getServiceIds(), services);
+            List<Long> foundIds = services.stream().map(ServiceEntity::getId).toList();
+            List<Long> missingIds = request.getServiceIds().stream()
+                    .filter(id -> !foundIds.contains(id))
+                    .toList();
+            throw new MissingServicesException(missingIds);
         }
         
         List<ServiceResponse> serviceResponses = new ArrayList<>();
