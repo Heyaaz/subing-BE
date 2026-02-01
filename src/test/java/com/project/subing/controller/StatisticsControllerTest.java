@@ -14,9 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -26,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Transactional
 class StatisticsControllerTest {
 
     @LocalServerPort
@@ -52,12 +56,7 @@ class StatisticsControllerTest {
     void setUp() {
         baseUrl = "http://localhost:" + port + "/api/v1/statistics";
         
-        // 기존 테스트 데이터 정리
-        userSubscriptionRepository.deleteAll();
-        userRepository.deleteAll();
-        serviceRepository.deleteAll();
-        
-        // 테스트 사용자 생성
+        // 테스트 사용자 생성 (@Transactional로 롤백되므로 deleteAll 불필요)
         testUser = User.builder()
                 .email("statistics-test-" + System.currentTimeMillis() + "@example.com")
                 .name("통계 테스트 사용자")
@@ -114,8 +113,12 @@ class StatisticsControllerTest {
 
     @Test
     void 월별_지출_통계_조회_성공() {
-        ResponseEntity<ApiResponse> response = restTemplate.getForEntity(
-                baseUrl + "/monthly/" + testUser.getId() + "?year=2024&month=10", 
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Test-User-Id", String.valueOf(testUser.getId()));
+        ResponseEntity<ApiResponse> response = restTemplate.exchange(
+                baseUrl + "/monthly?year=2024&month=10",
+                org.springframework.http.HttpMethod.GET,
+                new HttpEntity<>(headers),
                 ApiResponse.class
         );
         
@@ -126,8 +129,12 @@ class StatisticsControllerTest {
 
     @Test
     void 지출_분석_조회_성공() {
-        ResponseEntity<ApiResponse> response = restTemplate.getForEntity(
-                baseUrl + "/analysis/" + testUser.getId(), 
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Test-User-Id", String.valueOf(testUser.getId()));
+        ResponseEntity<ApiResponse> response = restTemplate.exchange(
+                baseUrl + "/analysis",
+                org.springframework.http.HttpMethod.GET,
+                new HttpEntity<>(headers),
                 ApiResponse.class
         );
         

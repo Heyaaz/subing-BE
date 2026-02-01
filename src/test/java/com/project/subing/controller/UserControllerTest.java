@@ -34,14 +34,15 @@ public class UserControllerTest {
 
     @Test
     public void 회원가입_성공() {
-        // given
-        String requestJson = """
+        // given - 테스트 간 이메일 중복 방지
+        String email = "signup-" + System.currentTimeMillis() + "@example.com";
+        String requestJson = String.format("""
                 {
-                    "email": "test@example.com",
+                    "email": "%s",
                     "password": "password123!",
                     "name": "테스트 사용자"
                 }
-                """;
+                """, email);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -53,20 +54,21 @@ public class UserControllerTest {
 
         // then
         assert response != null;
-        assert response.contains("test@example.com");
+        assert response.contains(email);
         assert response.contains("테스트 사용자");
     }
 
     @Test
     public void 로그인_성공() {
-        // given - 먼저 회원가입
-        String signupJson = """
+        // given - 테스트 간 이메일 중복 방지를 위해 고유 이메일로 회원가입
+        String email = "login-test-" + System.currentTimeMillis() + "@example.com";
+        String signupJson = String.format("""
                 {
-                    "email": "test@example.com",
+                    "email": "%s",
                     "password": "password123!",
                     "name": "테스트 사용자"
                 }
-                """;
+                """, email);
 
         HttpHeaders signupHeaders = new HttpHeaders();
         signupHeaders.setContentType(MediaType.APPLICATION_JSON);
@@ -75,12 +77,12 @@ public class UserControllerTest {
         restTemplate.postForObject(signupUrl, signupRequest, String.class);
 
         // when
-        String loginJson = """
+        String loginJson = String.format("""
                 {
-                    "email": "test@example.com",
+                    "email": "%s",
                     "password": "password123!"
                 }
-                """;
+                """, email);
 
         HttpHeaders loginHeaders = new HttpHeaders();
         loginHeaders.setContentType(MediaType.APPLICATION_JSON);
@@ -90,6 +92,6 @@ public class UserControllerTest {
 
         // then
         assert response != null;
-        assert response.contains("test@example.com");
+        assert response.contains(email);
     }
 }

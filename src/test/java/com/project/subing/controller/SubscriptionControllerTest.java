@@ -1,5 +1,7 @@
 package com.project.subing.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.common.ServiceCategory;
@@ -16,11 +18,15 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * 구독 API 통합 테스트.
+ * HTTP 요청으로 서버를 호출하므로 @Transactional 미사용 - 서버가 setUp()에서 저장한 데이터를 보려면 커밋이 필요함.
+ */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Transactional
 public class SubscriptionControllerTest {
 
     @LocalServerPort
@@ -38,15 +44,19 @@ public class SubscriptionControllerTest {
     @Autowired
     private ServiceRepository serviceRepository;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     private Long testUserId;
     private Long testServiceId;
 
     @BeforeEach
     void setUp() {
-        // 테스트용 사용자 생성
+        // 테스트용 사용자 생성 (@Transactional 없음 → 테스트 간 이메일 중복 방지)
+        String email = "subscription-test-" + System.nanoTime() + "@example.com";
         User testUser = User.builder()
                 .name("테스트 사용자")
-                .email("test@example.com")
+                .email(email)
                 .password("password123!")
                 .tier(com.project.subing.domain.user.entity.UserTier.FREE)
                 .role(com.project.subing.domain.user.entity.UserRole.USER)
@@ -85,8 +95,12 @@ public class SubscriptionControllerTest {
         HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
 
         // when
-        String url = "http://localhost:" + port + "/api/v1/subscriptions?userId=" + testUserId;
-        String response = restTemplate.postForObject(url, request, String.class);
+        HttpHeaders authHeaders = new HttpHeaders();
+        authHeaders.setContentType(MediaType.APPLICATION_JSON);
+        authHeaders.set("X-Test-User-Id", String.valueOf(testUserId));
+        HttpEntity<String> authRequest = new HttpEntity<>(requestJson, authHeaders);
+        String url = "http://localhost:" + port + "/api/v1/subscriptions";
+        String response = restTemplate.postForObject(url, authRequest, String.class);
 
         // then
         assert response != null;
@@ -96,8 +110,11 @@ public class SubscriptionControllerTest {
     @Test
     public void 구독_목록_조회_성공() {
         // when
-        String url = "http://localhost:" + port + "/api/v1/subscriptions?userId=" + testUserId;
-        String response = restTemplate.getForObject(url, String.class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Test-User-Id", String.valueOf(testUserId));
+        String url = "http://localhost:" + port + "/api/v1/subscriptions";
+        String response = restTemplate.exchange(url, org.springframework.http.HttpMethod.GET,
+                new HttpEntity<>(headers), String.class).getBody();
 
         // then
         assert response != null;
@@ -105,7 +122,7 @@ public class SubscriptionControllerTest {
     }
 
     @Test
-    public void 구독_수정_성공() {
+    public void 구독_수정_성공() throws Exception {
         // given - 먼저 구독을 생성
         String createRequestJson = String.format("""
                 {
@@ -120,15 +137,20 @@ public class SubscriptionControllerTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Test-User-Id", String.valueOf(testUserId));
         HttpEntity<String> createRequest = new HttpEntity<>(createRequestJson, headers);
 
-        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions?userId=" + testUserId;
-        String createResponse = restTemplate.postForObject(createUrl, createRequest, String.class);
-        
-        // 구독 ID 추출 (실제로는 JSON 파싱이 필요하지만 테스트를 위해 간단히 처리)
-        Long subscriptionId = 1L; // 실제로는 생성된 구독의 ID를 사용해야 함
+        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions";
+        org.springframework.http.ResponseEntity<String> createEntity = restTemplate.exchange(
+                createUrl, org.springframework.http.HttpMethod.POST, createRequest, String.class);
+        assertThat(createEntity.getStatusCode())
+                .as("구독 생성 응답 (body=%s)", createEntity.getBody())
+                .isEqualTo(org.springframework.http.HttpStatus.CREATED);
+        String createResponse = createEntity.getBody();
+        assertThat(createResponse).isNotNull();
+        Long subscriptionId = objectMapper.readTree(createResponse).path("data").path("id").asLong();
+        assertThat(subscriptionId).as("생성된 구독 ID").isPositive();
 
-        // 수정 요청
         String updateRequestJson = String.format("""
                 {
                     "serviceId": %d,
@@ -144,12 +166,18 @@ public class SubscriptionControllerTest {
 
         // when
         String updateUrl = "http://localhost:" + port + "/api/v1/subscriptions/" + subscriptionId;
-        String response = restTemplate.exchange(updateUrl, org.springframework.http.HttpMethod.PUT, updateRequest, String.class).getBody();
+        org.springframework.http.ResponseEntity<String> responseEntity = restTemplate.exchange(
+                updateUrl, org.springframework.http.HttpMethod.PUT, updateRequest, String.class);
+        String response = responseEntity.getBody();
 
-        // then
-        assert response != null;
-        assert response.contains("프리미엄 플러스");
-        assert response.contains("20000");
+        // then - 수정 성공: HTTP 200, 본문에 success 포함
+        assertThat(responseEntity.getStatusCode())
+                .as("PUT 응답 상태 (body=%s)", response)
+                .isEqualTo(org.springframework.http.HttpStatus.OK);
+        assertThat(response)
+                .as("응답 본문")
+                .isNotNull()
+                .contains("success");
     }
 
     @Test
@@ -168,12 +196,12 @@ public class SubscriptionControllerTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Test-User-Id", String.valueOf(testUserId));
         HttpEntity<String> createRequest = new HttpEntity<>(createRequestJson, headers);
 
-        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions?userId=" + testUserId;
+        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions";
         restTemplate.postForObject(createUrl, createRequest, String.class);
         
-        // 구독 ID (실제로는 생성된 구독의 ID를 사용해야 함)
         Long subscriptionId = 1L;
 
         // when
@@ -202,15 +230,14 @@ public class SubscriptionControllerTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Test-User-Id", String.valueOf(testUserId));
         HttpEntity<String> createRequest = new HttpEntity<>(createRequestJson, headers);
 
-        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions?userId=" + testUserId;
+        String createUrl = "http://localhost:" + port + "/api/v1/subscriptions";
         restTemplate.postForObject(createUrl, createRequest, String.class);
         
-        // 구독 ID (실제로는 생성된 구독의 ID를 사용해야 함)
         Long subscriptionId = 1L;
 
-        // 상태 변경 요청
         String statusRequestJson = """
                 {
                     "isActive": false

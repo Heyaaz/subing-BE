@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -146,10 +147,11 @@ class ServiceControllerTest {
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
         
         ResponseEntity<String> response = restTemplate.postForEntity(
-                baseUrl + "/compare", 
-                requestBody, 
+                baseUrl + "/compare",
+                entity,
                 String.class
         );
         
@@ -163,13 +165,14 @@ class ServiceControllerTest {
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
         
         ResponseEntity<String> response = restTemplate.postForEntity(
-                baseUrl + "/compare", 
-                requestBody, 
+                baseUrl + "/compare",
+                entity,
                 String.class
         );
         
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
     }
 }
