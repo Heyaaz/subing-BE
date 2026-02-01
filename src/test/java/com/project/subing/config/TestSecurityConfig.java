@@ -9,10 +9,12 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * 테스트 환경용 Security 설정
- * 모든 엔드포인트에 대한 인증을 비활성화하여 테스트 편의성 제공
+ * 모든 엔드포인트에 대한 인증을 비활성화하여 테스트 편의성 제공.
+ * X-Test-User-Id 헤더가 있으면 해당 값을 principal로 설정하는 TestPrincipalFilter 적용.
  */
 @Configuration
 @EnableWebSecurity
@@ -20,13 +22,19 @@ import org.springframework.security.web.SecurityFilterChain;
 public class TestSecurityConfig {
 
     @Bean
-    public SecurityFilterChain testFilterChain(HttpSecurity http) throws Exception {
+    public TestPrincipalFilter testPrincipalFilter() {
+        return new TestPrincipalFilter();
+    }
+
+    @Bean
+    public SecurityFilterChain testFilterChain(HttpSecurity http, TestPrincipalFilter testPrincipalFilter) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll()  // 테스트 환경에서는 모든 요청 허용
-            );
+                .anyRequest().permitAll()
+            )
+            .addFilterBefore(testPrincipalFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
