@@ -1,0 +1,45 @@
+spring:
+  config:
+    import: optional:file:.env.dev[.properties]
+
+  datasource:
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # 개발: 스키마 자동 업데이트
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        show_sql: true  # 개발: SQL 출력
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+          max-tokens: 2000
+          temperature: 0.7
+
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity: 86400000  # 개발: 24시간
+
+# 로깅
+logging:
+  level:
+    com.project.subing: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# 서버 설정
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: on_param  # ?trace=true로 스택트레이스 확인
