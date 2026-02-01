@@ -9,6 +9,7 @@ import com.project.subing.dto.preference.UserPreferenceResponse;
 import com.project.subing.service.PreferenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -43,9 +44,8 @@ public class PreferenceController {
      */
     @PostMapping("/submit")
     public ResponseEntity<ApiResponse<UserPreferenceResponse>> submitAnswers(
-        @RequestParam Long userId,
-        @RequestBody SubmitAnswersRequest request
-    ) {
+            @AuthenticationPrincipal Long userId,
+            @RequestBody SubmitAnswersRequest request) {
         UserPreference userPreference = preferenceService.submitAnswers(userId, request.getAnswers());
         UserPreferenceResponse response = UserPreferenceResponse.from(userPreference);
 
@@ -60,8 +60,7 @@ public class PreferenceController {
      */
     @GetMapping("/profile")
     public ResponseEntity<ApiResponse<UserPreferenceResponse>> getProfile(
-        @RequestParam Long userId
-    ) {
+            @AuthenticationPrincipal Long userId) {
         UserPreference userPreference = preferenceService.getUserPreference(userId)
             .orElseThrow(() -> new IllegalArgumentException("성향 프로필을 찾을 수 없습니다. 먼저 테스트를 완료해주세요."));
 
@@ -78,8 +77,7 @@ public class PreferenceController {
      */
     @DeleteMapping("/profile")
     public ResponseEntity<ApiResponse<Void>> deleteProfile(
-        @RequestParam Long userId
-    ) {
+            @AuthenticationPrincipal Long userId) {
         preferenceService.deleteUserPreference(userId);
 
         return ResponseEntity.ok(

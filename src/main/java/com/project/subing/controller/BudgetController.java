@@ -7,6 +7,7 @@ import com.project.subing.dto.common.ApiResponse;
 import com.project.subing.service.BudgetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,7 +22,7 @@ public class BudgetController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<BudgetResponse>> setBudget(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal Long userId,
             @RequestBody BudgetRequest request) {
         Budget budget = budgetService.setBudget(
                 userId,
@@ -35,7 +36,7 @@ public class BudgetController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<BudgetResponse>>> getAllBudgets(
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId) {
         List<Budget> budgets = budgetService.getAllBudgets(userId);
         List<BudgetResponse> responses = budgets.stream()
                 .map(BudgetResponse::from)
@@ -45,7 +46,7 @@ public class BudgetController {
 
     @GetMapping("/current")
     public ResponseEntity<ApiResponse<BudgetResponse>> getCurrentMonthBudget(
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId) {
         Optional<Budget> budget = budgetService.getCurrentMonthBudget(userId);
         if (budget.isPresent()) {
             BudgetResponse response = BudgetResponse.from(budget.get());
@@ -57,7 +58,7 @@ public class BudgetController {
 
     @GetMapping("/{year}/{month}")
     public ResponseEntity<ApiResponse<BudgetResponse>> getBudget(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal Long userId,
             @PathVariable Integer year,
             @PathVariable Integer month) {
         Optional<Budget> budget = budgetService.getBudget(userId, year, month);
@@ -71,8 +72,8 @@ public class BudgetController {
 
     @DeleteMapping("/{budgetId}")
     public ResponseEntity<ApiResponse<Void>> deleteBudget(
-            @PathVariable Long budgetId,
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long budgetId) {
         budgetService.deleteBudget(budgetId, userId);
         return ResponseEntity.ok(ApiResponse.success(null, "예산이 삭제되었습니다."));
     }
