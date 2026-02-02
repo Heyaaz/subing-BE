@@ -1,6 +1,8 @@
 spring:
   application:
     name: subing
+  profiles:
+    active: dev  # IDE 등에서 프로파일 미지정 시 dev 사용
 
   jpa:
     properties:
@@ -13,6 +15,8 @@ spring:
       client:
         registration: {}  # Phase 2: 소셜 로그인
 
-# JWT 기본값
+# JWT 기본값 (실서비스/개발 시 JWT_SECRET 환경변수 또는 프로파일별 설정 사용)
 jwt:
+  secret: ${JWT_SECRET:subing-local-dev-secret-key-at-least-32-chars-for-hs256}
+  access-token-validity: ${JWT_ACCESS_TOKEN_VALIDITY:86400000}  # 24시간
   refresh-token-validity: 604800000  # 7일
