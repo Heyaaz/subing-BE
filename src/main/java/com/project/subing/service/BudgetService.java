@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -47,7 +49,10 @@ public class BudgetService {
 
     @Transactional(readOnly = true)
     public Optional<Budget> getBudget(Long userId, Integer year, Integer month) {
-        return budgetRepository.findByUser_IdAndYearAndMonth(userId, year, month);
+        Optional<Budget> exact = budgetRepository.findByUser_IdAndYearAndMonth(userId, year, month);
+        if (exact.isPresent()) return exact;
+        return budgetRepository.findLatestOnOrBefore(userId, year, month, PageRequest.of(0, 1))
+                .stream().findFirst();
     }
 
     @Transactional(readOnly = true)
@@ -58,7 +63,10 @@ public class BudgetService {
     @Transactional(readOnly = true)
     public Optional<Budget> getCurrentMonthBudget(Long userId) {
         LocalDate now = LocalDate.now();
-        return budgetRepository.findByUser_IdAndYearAndMonth(userId, now.getYear(), now.getMonthValue());
+        Optional<Budget> exact = budgetRepository.findByUser_IdAndYearAndMonth(userId, now.getYear(), now.getMonthValue());
+        if (exact.isPresent()) return exact;
+        return budgetRepository.findLatestOnOrBefore(userId, now.getYear(), now.getMonthValue(), PageRequest.of(0, 1))
+                .stream().findFirst();
     }
 
     public void deleteBudget(Long budgetId, Long userId) {
