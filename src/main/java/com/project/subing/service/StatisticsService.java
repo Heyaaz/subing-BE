@@ -1,5 +1,6 @@
 package com.project.subing.service;
 
+import com.project.subing.domain.common.Currency;
 import com.project.subing.domain.common.ServiceCategory;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.subscription.entity.UserSubscription;
@@ -13,34 +14,59 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class StatisticsService {
-    
+
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final ServiceRepository serviceRepository;
+
+    // 환율 상수 (1 USD = 1300 KRW)
+    private static final double USD_TO_KRW_RATE = 1300.0;
     
     public MonthlyExpenseResponse getMonthlyExpense(Long userId, Integer year, Integer month) {
         List<UserSubscription> subscriptions = userSubscriptionRepository.findByUserIdAndIsActiveTrue(userId);
-        
+
+        // 특정 월(year, month)에 활성이었던 구독만 필터링
+        YearMonth targetMonth = YearMonth.of(year, month);
+        List<UserSubscription> activeInMonth = subscriptions.stream()
+            .filter(sub -> {
+                LocalDate startDate = sub.getStartedAt();
+                // startedAt 없으면 기존 데이터 호환을 위해 해당 월에 포함
+                if (startDate == null) return true;
+
+                YearMonth subStartMonth = YearMonth.from(startDate);
+                // 구독 시작월이 조회월 이전이거나 같으면 해당 월에 활성
+                return !subStartMonth.isAfter(targetMonth);
+            })
+            .collect(Collectors.toList());
+
         int totalAmount = 0;
         Map<String, CategoryExpenseResponse> categoryMap = new HashMap<>();
-        
-        for (UserSubscription subscription : subscriptions) {
+
+        for (UserSubscription subscription : activeInMonth) {
             ServiceEntity service = subscription.getService();
             String category = service.getCategory().name();
             int amount = subscription.getMonthlyPrice();
-            
+
+            // 환율 변환 추가
+            if (subscription.getCurrency() == Currency.USD) {
+                amount = (int) (amount * USD_TO_KRW_RATE);
+            }
+
             totalAmount += amount;
-            
+
             if (categoryMap.containsKey(category)) {
                 CategoryExpenseResponse existing = categoryMap.get(category);
                 CategoryExpenseResponse updated = CategoryExpenseResponse.builder()
@@ -54,7 +80,7 @@ public class StatisticsService {
             } else {
                 List<String> serviceNames = new ArrayList<>();
                 serviceNames.add(service.getServiceName());
-                
+
                 CategoryExpenseResponse newCategory = CategoryExpenseResponse.builder()
                         .category(category)
                         .amount(amount)
@@ -84,20 +110,19 @@ public class StatisticsService {
                 .year(year)
                 .month(month)
                 .totalAmount(totalAmount)
-                .activeSubscriptions(subscriptions.size())
+                .activeSubscriptions(activeInMonth.size())
                 .categoryExpenses(categoryExpenses)
                 .generatedAt(LocalDateTime.now())
                 .build();
     }
     
-    public ExpenseAnalysisResponse getExpenseAnalysis(Long userId) {
-        LocalDateTime now = LocalDateTime.now();
-        int currentYear = now.getYear();
-        int currentMonthValue = now.getMonthValue();
-        
+    public ExpenseAnalysisResponse getExpenseAnalysis(Long userId, Integer year, Integer month) {
+        int currentYear = year;
+        int currentMonthValue = month;
+
         // 현재 월 지출
         MonthlyExpenseResponse currentMonthData = getMonthlyExpense(userId, currentYear, currentMonthValue);
-        
+
         // 이전 월 지출
         int previousMonth = currentMonthValue == 1 ? 12 : currentMonthValue - 1;
         int previousYear = currentMonthValue == 1 ? currentYear - 1 : currentYear;
@@ -111,8 +136,8 @@ public class StatisticsService {
         
         // 연간 총 지출 계산
         int yearlyTotal = 0;
-        for (int month = 1; month <= 12; month++) {
-            MonthlyExpenseResponse monthData = getMonthlyExpense(userId, currentYear, month);
+        for (int m = 1; m <= 12; m++) {
+            MonthlyExpenseResponse monthData = getMonthlyExpense(userId, year, m);
             yearlyTotal += monthData.getTotalAmount();
         }
         
