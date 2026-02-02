@@ -4,9 +4,7 @@ import com.project.subing.dto.common.ApiResponse;
 import com.project.subing.dto.optimization.CheaperAlternativeResponse;
 import com.project.subing.dto.optimization.DuplicateServiceGroupResponse;
 import com.project.subing.dto.optimization.OptimizationSuggestionResponse;
-import com.project.subing.exception.tier.OptimizationCheckLimitException;
 import com.project.subing.service.SubscriptionOptimizationService;
-import com.project.subing.service.TierLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,15 +19,10 @@ import java.util.stream.Collectors;
 public class OptimizationController {
 
     private final SubscriptionOptimizationService optimizationService;
-    private final TierLimitService tierLimitService;
 
     @GetMapping("/suggestions")
     public ResponseEntity<ApiResponse<OptimizationSuggestionResponse>> getOptimizationSuggestions(
             @AuthenticationPrincipal Long userId) {
-
-        if (!tierLimitService.canUseOptimizationCheck(userId)) {
-            throw new OptimizationCheckLimitException();
-        }
 
         List<SubscriptionOptimizationService.DuplicateServiceGroup> duplicates =
                 optimizationService.detectDuplicateServices(userId);
@@ -55,8 +48,6 @@ public class OptimizationController {
                 .totalPotentialSavings(totalPotentialSavings)
                 .summary(summary)
                 .build();
-
-        tierLimitService.incrementOptimizationCheck(userId);
 
         return ResponseEntity.ok(ApiResponse.success(response, "최적화 제안을 생성했습니다."));
     }

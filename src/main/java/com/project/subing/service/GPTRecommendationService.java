@@ -17,7 +17,6 @@ import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.exception.external.GptApiException;
 import com.project.subing.exception.external.GptParsingException;
 import com.project.subing.exception.external.RecommendationSaveException;
-import com.project.subing.exception.tier.GptRecommendationLimitException;
 import com.project.subing.repository.RecommendationClickRepository;
 import com.project.subing.repository.RecommendationFeedbackRepository;
 import com.project.subing.repository.RecommendationResultRepository;
@@ -53,16 +52,10 @@ public class GPTRecommendationService {
     private final RecommendationResultRepository recommendationResultRepository;
     private final RecommendationFeedbackRepository recommendationFeedbackRepository;
     private final RecommendationClickRepository recommendationClickRepository;
-    private final TierLimitService tierLimitService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     public RecommendationResponse getRecommendations(Long userId, QuizRequest quiz) {
-        // 0. 티어 제한 체크
-        if (!tierLimitService.canUseGptRecommendation(userId)) {
-            throw new GptRecommendationLimitException();
-        }
-
         // 0-1. 사용자 성향 데이터 조회 (Optional)
         UserPreference userPreference = userPreferenceRepository.findByUserId(userId).orElse(null);
 
@@ -74,9 +67,6 @@ public class GPTRecommendationService {
 
         // 2. DB에 저장
         saveRecommendationResult(userId, quiz, result, promptVersion);
-
-        // 3. 사용량 증가
-        tierLimitService.incrementGptRecommendation(userId);
 
         return result;
     }
@@ -97,11 +87,6 @@ public class GPTRecommendationService {
      * SSE를 통한 스트리밍 추천 (실시간 타이핑 효과)
      */
     public SseEmitter getRecommendationsStream(Long userId, QuizRequest quiz) {
-        // 0. 티어 제한 체크
-        if (!tierLimitService.canUseGptRecommendation(userId)) {
-            throw new GptRecommendationLimitException();
-        }
-
         // SSE Emitter 생성 (타임아웃 5분)
         SseEmitter emitter = new SseEmitter(300000L);
 
@@ -175,9 +160,6 @@ public class GPTRecommendationService {
                                 String responseText = fullResponse.toString();
                                 RecommendationResponse parsedResponse = parseResponse(responseText);
                                 saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
-
-                                // 사용량 증가
-                                tierLimitService.incrementGptRecommendation(userId);
 
                                 emitter.complete();
                             } catch (Exception e) {
