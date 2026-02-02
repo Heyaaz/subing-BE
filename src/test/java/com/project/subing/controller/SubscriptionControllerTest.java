@@ -86,6 +86,7 @@ public class SubscriptionControllerTest {
                     "monthlyPrice": 17000,
                     "billingDate": 15,
                     "billingCycle": "MONTHLY",
+                    "startedAt": "2024-01",
                     "notes": "가족 공유 중"
                 }
                 """, testServiceId);
@@ -131,6 +132,7 @@ public class SubscriptionControllerTest {
                     "monthlyPrice": 17000,
                     "billingDate": 15,
                     "billingCycle": "MONTHLY",
+                    "startedAt": "2024-01",
                     "notes": "가족 공유 중"
                 }
                 """, testServiceId);
@@ -158,6 +160,7 @@ public class SubscriptionControllerTest {
                     "monthlyPrice": 20000,
                     "billingDate": 20,
                     "billingCycle": "MONTHLY",
+                    "startedAt": "2024-01",
                     "notes": "업그레이드된 플랜"
                 }
                 """, testServiceId);
@@ -190,6 +193,7 @@ public class SubscriptionControllerTest {
                     "monthlyPrice": 17000,
                     "billingDate": 15,
                     "billingCycle": "MONTHLY",
+                    "startedAt": "2024-01",
                     "notes": "가족 공유 중"
                 }
                 """, testServiceId);
@@ -224,6 +228,7 @@ public class SubscriptionControllerTest {
                     "monthlyPrice": 17000,
                     "billingDate": 15,
                     "billingCycle": "MONTHLY",
+                    "startedAt": "2024-01",
                     "notes": "가족 공유 중"
                 }
                 """, testServiceId);
