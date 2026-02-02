@@ -8,6 +8,8 @@ public enum ServiceCategory {
     CLOUD("클라우드"),
     DESIGN("디자인"),
     DELIVERY("배달"),
+    PRODUCTIVITY("생산성"),
+    NEWS_READING("뉴스·독서"),
     ETC("기타");
     
     private final String description;
