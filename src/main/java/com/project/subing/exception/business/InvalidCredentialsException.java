@@ -1,5 +1,6 @@
 package com.project.subing.exception.business;
 
+import com.project.subing.exception.ApplicationException;
 import com.project.subing.exception.ErrorCode;
 
 /**
@@ -7,7 +8,7 @@ import com.project.subing.exception.ErrorCode;
  *
  * HTTP Status: 401 Unauthorized
  */
-public class InvalidCredentialsException extends BusinessRuleViolationException {
+public class InvalidCredentialsException extends ApplicationException {
 
     public InvalidCredentialsException() {
         super(ErrorCode.INVALID_CREDENTIALS);

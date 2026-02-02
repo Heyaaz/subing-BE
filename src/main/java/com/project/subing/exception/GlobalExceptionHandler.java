@@ -3,6 +3,7 @@ package com.project.subing.exception;
 import com.project.subing.dto.common.ApiResponse;
 import com.project.subing.exception.auth.AuthorizationException;
 import com.project.subing.exception.business.BusinessRuleViolationException;
+import com.project.subing.exception.business.InvalidCredentialsException;
 import com.project.subing.exception.entity.EntityNotFoundException;
 import com.project.subing.exception.external.ExternalApiException;
 import com.project.subing.exception.tier.TierLimitExceededException;
@@ -28,6 +29,29 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     /**
+     * InvalidCredentialsException 처리
+     * HTTP Status: 401 Unauthorized
+     */
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleInvalidCredentials(
+            InvalidCredentialsException e,
+            HttpServletRequest request) {
+
+        log.warn("[401] Invalid credentials: {} | Path: {}", e.getMessage(), request.getRequestURI());
+
+        ErrorResponse errorResponse = ErrorResponse.from(e, request.getRequestURI());
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.<ErrorResponse>builder()
+                        .success(false)
+                        .data(errorResponse)
+                        .message(errorResponse.getMessage())
+                        .timestamp(errorResponse.getTimestamp())
+                        .build());
+    }
+
+    /**
      * EntityNotFoundException 처리
      * HTTP Status: 404 Not Found
      */
@@ -45,7 +69,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("요청한 리소스를 찾을 수 없습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -68,7 +92,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("비즈니스 규칙 위반")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -92,7 +116,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("권한이 없습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -116,7 +140,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("사용량 제한을 초과했습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -139,7 +163,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("외부 API 호출에 실패했습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -175,7 +199,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("입력 값이 올바르지 않습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -202,7 +226,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("잘못된 요청입니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
@@ -229,7 +253,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.<ErrorResponse>builder()
                         .success(false)
                         .data(errorResponse)
-                        .message("서버 오류가 발생했습니다")
+                        .message(errorResponse.getMessage())
                         .timestamp(errorResponse.getTimestamp())
                         .build());
     }
