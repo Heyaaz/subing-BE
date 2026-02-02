@@ -1,7 +1,12 @@
 spring:
   application:
     name: subing-test
-  
+
+  # 테스트 시 ApplicationContext 로딩을 위해 OpenAI API 키 더미 설정 (실제 호출 없음)
+  ai:
+    openai:
+      api-key: test-dummy-key-for-context-loading
+
   datasource:
     url: jdbc:h2:mem:testdb
     username: sa
