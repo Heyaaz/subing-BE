@@ -28,8 +28,15 @@ public class StatisticsController {
 
     @GetMapping("/analysis")
     public ResponseEntity<ApiResponse<ExpenseAnalysisResponse>> getExpenseAnalysis(
-            @AuthenticationPrincipal Long userId) {
-        ExpenseAnalysisResponse response = statisticsService.getExpenseAnalysis(userId);
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+
+        // 기본값 설정
+        if (year == null) year = java.time.LocalDateTime.now().getYear();
+        if (month == null) month = java.time.LocalDateTime.now().getMonthValue();
+
+        ExpenseAnalysisResponse response = statisticsService.getExpenseAnalysis(userId, year, month);
         return ResponseEntity.ok(ApiResponse.success(response, "지출 분석 결과를 조회했습니다."));
     }
 }

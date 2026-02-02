@@ -138,6 +138,17 @@ public class SubscriptionService {
                 case "name_desc":
                     subscriptions.sort((s1, s2) -> s2.getService().getServiceName().compareTo(s1.getService().getServiceName()));
                     break;
+                case "nextpaymentdate":
+                case "nextbillingdate":
+                    subscriptions.sort((s1, s2) -> {
+                        LocalDate date1 = s1.getNextBillingDate();
+                        LocalDate date2 = s2.getNextBillingDate();
+                        if (date1 == null && date2 == null) return 0;
+                        if (date1 == null) return 1;
+                        if (date2 == null) return -1;
+                        return date1.compareTo(date2);
+                    });
+                    break;
                 default:
                     // 기본 정렬: 생성일 내림차순
                     subscriptions.sort((s1, s2) -> s2.getCreatedAt().compareTo(s1.getCreatedAt()));
