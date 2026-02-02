@@ -16,6 +16,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -38,30 +41,38 @@ public class SubscriptionService {
                 .orElseThrow(() -> new ServiceNotFoundException(request.getServiceId()));
         
         // 구독 생성
+        com.project.subing.domain.common.Currency currency = request.getCurrency() != null
+                ? request.getCurrency() : com.project.subing.domain.common.Currency.KRW;
+        LocalDate startedAt = parseStartedAt(request.getStartedAt());
         UserSubscription subscription = UserSubscription.builder()
                 .user(user)
                 .service(service)
                 .planName(request.getPlanName())
                 .monthlyPrice(request.getMonthlyPrice())
+                .currency(currency)
                 .billingDate(request.getBillingDate())
                 .billingCycle(request.getBillingCycle())
                 .notes(request.getNotes())
+                .startedAt(startedAt)
                 .build();
         
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
         
         return SubscriptionResponse.builder()
                 .id(savedSubscription.getId())
+                .serviceId(savedSubscription.getService() != null ? savedSubscription.getService().getId() : null)
                 .serviceName(savedSubscription.getService() != null ? savedSubscription.getService().getServiceName() : "서비스 없음")
                 .serviceCategory(savedSubscription.getService() != null ? savedSubscription.getService().getCategory().toString() : "카테고리 없음")
                 .serviceIcon(savedSubscription.getService() != null ? savedSubscription.getService().getIconUrl() : "")
                 .planName(savedSubscription.getPlanName())
                 .monthlyPrice(savedSubscription.getMonthlyPrice())
+                .currency(savedSubscription.getCurrency())
                 .billingDate(savedSubscription.getBillingDate())
                 .nextBillingDate(savedSubscription.getNextBillingDate())
                 .billingCycle(savedSubscription.getBillingCycle())
                 .isActive(savedSubscription.getIsActive())
                 .notes(savedSubscription.getNotes())
+                .startedAt(savedSubscription.getStartedAt())
                 .createdAt(savedSubscription.getCreatedAt())
                 .build();
     }
@@ -148,9 +159,15 @@ public class SubscriptionService {
 
         subscription.updatePrice(request.getMonthlyPrice());
         subscription.setPlanName(request.getPlanName());
+        if (request.getCurrency() != null) {
+            subscription.setCurrency(request.getCurrency());
+        }
         subscription.setBillingDate(request.getBillingDate());
         subscription.setBillingCycle(request.getBillingCycle());
         subscription.setNotes(request.getNotes());
+        if (request.getStartedAt() != null) {
+            subscription.setStartedAt(parseStartedAt(request.getStartedAt()));
+        }
 
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
 
@@ -190,17 +207,31 @@ public class SubscriptionService {
     private SubscriptionResponse convertToResponse(UserSubscription subscription) {
         return SubscriptionResponse.builder()
                 .id(subscription.getId())
+                .serviceId(subscription.getService() != null ? subscription.getService().getId() : null)
                 .serviceName(subscription.getService() != null ? subscription.getService().getServiceName() : "서비스 없음")
                 .serviceCategory(subscription.getService() != null ? subscription.getService().getCategory().toString() : "카테고리 없음")
                 .serviceIcon(subscription.getService() != null ? subscription.getService().getIconUrl() : "")
                 .planName(subscription.getPlanName())
                 .monthlyPrice(subscription.getMonthlyPrice())
+                .currency(subscription.getCurrency() != null ? subscription.getCurrency() : com.project.subing.domain.common.Currency.KRW)
                 .billingDate(subscription.getBillingDate())
                 .nextBillingDate(subscription.getNextBillingDate())
                 .billingCycle(subscription.getBillingCycle())
                 .isActive(subscription.getIsActive())
                 .notes(subscription.getNotes())
+                .startedAt(subscription.getStartedAt())
                 .createdAt(subscription.getCreatedAt())
                 .build();
+    }
+
+    private static LocalDate parseStartedAt(String startedAt) {
+        if (startedAt == null || startedAt.isBlank()) {
+            return null;
+        }
+        try {
+            return YearMonth.parse(startedAt).atDay(1);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 }

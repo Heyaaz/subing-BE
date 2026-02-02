@@ -1,6 +1,7 @@
 package com.project.subing.domain.subscription.entity;
 
 import com.project.subing.domain.common.BillingCycle;
+import com.project.subing.domain.common.Currency;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import jakarta.persistence.*;
@@ -37,6 +38,11 @@ public class UserSubscription {
     @Column(nullable = false)
     private Integer monthlyPrice;
     
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)  // nullable: 기존 행 호환, 없으면 KRW로 처리
+    @Builder.Default
+    private Currency currency = Currency.KRW;
+    
     @Column(nullable = false)
     private Integer billingDate;  // 1-31
     
@@ -51,6 +57,10 @@ public class UserSubscription {
     
     @Column(columnDefinition = "TEXT")
     private String notes;
+
+    /** 구독 시작월 (년-월만 사용, 일은 1일로 저장). nullable: 기존 데이터 호환 */
+    @Column(name = "started_at")
+    private LocalDate startedAt;
     
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
@@ -65,14 +75,10 @@ public class UserSubscription {
         LocalDate today = LocalDate.now();
         int currentDay = today.getDayOfMonth();
         
-        LocalDate nextBilling;
-        if (currentDay < this.billingDate) {
-            // 이번 달에 결제일이 남아있음
-            nextBilling = today.withDayOfMonth(this.billingDate);
-        } else {
-            // 다음 달 결제일
-            nextBilling = today.plusMonths(1).withDayOfMonth(this.billingDate);
-        }
+        LocalDate targetMonth = (currentDay < this.billingDate) ? today : today.plusMonths(1);
+        int safeDay = Math.min(this.billingDate, targetMonth.lengthOfMonth());
+        
+        LocalDate nextBilling = targetMonth.withDayOfMonth(safeDay);
         
         // 연간 결제인 경우 1년 추가
         if (this.billingCycle == BillingCycle.YEARLY) {
@@ -84,6 +90,10 @@ public class UserSubscription {
     
     public void updatePrice(Integer newPrice) {
         this.monthlyPrice = newPrice;
+    }
+    
+    public void setCurrency(Currency currency) {
+        this.currency = currency;
     }
     
     public void setPlanName(String planName) {
@@ -100,6 +110,10 @@ public class UserSubscription {
     
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public void setStartedAt(LocalDate startedAt) {
+        this.startedAt = startedAt;
     }
     
     public void cancel() {
