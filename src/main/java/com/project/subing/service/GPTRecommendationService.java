@@ -7,6 +7,7 @@ import com.project.subing.domain.recommendation.entity.RecommendationFeedback;
 import com.project.subing.domain.recommendation.entity.RecommendationResult;
 import com.project.subing.domain.recommendation.enums.PromptVersion;
 import com.project.subing.domain.service.entity.ServiceEntity;
+import com.project.subing.domain.service.entity.SubscriptionPlan;
 import com.project.subing.domain.user.entity.User;
 import com.project.subing.dto.recommendation.QuizRequest;
 import com.project.subing.dto.recommendation.RecommendationResponse;
@@ -21,6 +22,7 @@ import com.project.subing.repository.RecommendationClickRepository;
 import com.project.subing.repository.RecommendationFeedbackRepository;
 import com.project.subing.repository.RecommendationResultRepository;
 import com.project.subing.repository.ServiceRepository;
+import com.project.subing.repository.SubscriptionPlanRepository;
 import com.project.subing.repository.UserPreferenceRepository;
 import com.project.subing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +54,7 @@ public class GPTRecommendationService {
     private final RecommendationResultRepository recommendationResultRepository;
     private final RecommendationFeedbackRepository recommendationFeedbackRepository;
     private final RecommendationClickRepository recommendationClickRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -65,7 +68,10 @@ public class GPTRecommendationService {
         // 1. 캐시된 추천 결과 조회 (없으면 GPT API 호출)
         RecommendationResponse result = getRecommendationFromCache(userId, quiz, userPreference, promptVersion);
 
-        // 2. DB에 저장
+        // 2. 가격 정보 추가
+        enrichPriceInfo(result);
+
+        // 3. DB에 저장
         saveRecommendationResult(userId, quiz, result, promptVersion);
 
         return result;
@@ -171,11 +177,24 @@ public class GPTRecommendationService {
                                     // 한글 띄어쓰기 보정 (blocking call이므로 executor 스레드에서 실행)
                                     String correctedJson = fixKoreanSpacing(responseText);
 
+                                    // DB에 저장하기 위해 파싱
+                                    RecommendationResponse parsedResponse = parseResponse(correctedJson);
+                                    System.out.println("[GPT 스트리밍] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
+                                    parsedResponse.getRecommendations().forEach(item ->
+                                        System.out.println("[GPT 스트리밍] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
+                                    );
+
+                                    // 가격 정보 추가
+                                    enrichPriceInfo(parsedResponse);
+
+                                    // 가격 정보가 추가된 결과를 다시 JSON으로 변환
+                                    String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
+
                                     // 보정된 결과를 result 이벤트로 전송 (단일 라인 JSON)
                                     System.out.println("[SSE] result 이벤트 전송 시작");
                                     emitter.send(SseEmitter.event()
                                             .name("result")
-                                            .data(correctedJson));
+                                            .data(enrichedJson));
                                     System.out.println("[SSE] result 이벤트 전송 완료");
 
                                     // 완료 이벤트 전송
@@ -184,11 +203,6 @@ public class GPTRecommendationService {
                                             .data("complete"));
 
                                     // DB에 저장
-                                    RecommendationResponse parsedResponse = parseResponse(correctedJson);
-                                    System.out.println("[GPT 스트리밍] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
-                                    parsedResponse.getRecommendations().forEach(item ->
-                                        System.out.println("[GPT 스트리밍] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
-                                    );
                                     saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
 
                                     emitter.complete();
@@ -467,6 +481,76 @@ public class GPTRecommendationService {
             throw e;
         } catch (Exception e) {
             throw new RecommendationSaveException(e);
+        }
+    }
+
+    /**
+     * 추천 결과에 가격 정보 추가
+     */
+    private void enrichPriceInfo(RecommendationResponse response) {
+        if (response.getRecommendations() == null) {
+            return;
+        }
+
+        for (com.project.subing.dto.recommendation.RecommendationItem item : response.getRecommendations()) {
+            if (item.getServiceId() == null) {
+                continue;
+            }
+
+            try {
+                // 서비스의 모든 플랜 조회
+                List<SubscriptionPlan> plans = subscriptionPlanRepository.findByServiceId(item.getServiceId());
+
+                if (plans.isEmpty()) {
+                    continue;
+                }
+
+                // 무료 플랜 여부 확인
+                boolean hasFreePlan = plans.stream()
+                    .anyMatch(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() == 0);
+
+                // 최저가 조회 (무료 제외)
+                Integer minPrice = plans.stream()
+                    .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
+                    .mapToInt(SubscriptionPlan::getMonthlyPrice)
+                    .min()
+                    .orElse(0);
+
+                // 최고가 조회 (무료 제외)
+                Integer maxPrice = plans.stream()
+                    .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
+                    .mapToInt(SubscriptionPlan::getMonthlyPrice)
+                    .max()
+                    .orElse(0);
+
+                // 가격 범위 문자열 생성
+                String priceRange;
+                if (hasFreePlan && minPrice > 0) {
+                    priceRange = String.format("무료 ~ ₩%,d/월", maxPrice);
+                } else if (hasFreePlan) {
+                    priceRange = "무료";
+                } else if (minPrice == maxPrice) {
+                    priceRange = String.format("₩%,d/월", minPrice);
+                } else {
+                    priceRange = String.format("₩%,d ~ ₩%,d/월", minPrice, maxPrice);
+                }
+
+                // DTO에 설정
+                item.setMinPrice(minPrice > 0 ? minPrice : null);
+                item.setHasFreePlan(hasFreePlan);
+                item.setPriceRange(priceRange);
+
+                System.out.println(String.format(
+                    "[가격 정보] %s - 최저가: %s원, 무료 플랜: %s, 범위: %s",
+                    item.getServiceName(),
+                    minPrice > 0 ? String.format("%,d", minPrice) : "없음",
+                    hasFreePlan ? "있음" : "없음",
+                    priceRange
+                ));
+
+            } catch (Exception e) {
+                System.err.println("[가격 정보 조회 실패] " + item.getServiceName() + ": " + e.getMessage());
+            }
         }
     }
 }
