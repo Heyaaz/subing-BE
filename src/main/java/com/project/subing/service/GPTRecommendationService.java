@@ -71,8 +71,9 @@ public class GPTRecommendationService {
         // 2. 가격 정보 추가
         enrichPriceInfo(result);
 
-        // 3. DB에 저장
-        saveRecommendationResult(userId, quiz, result, promptVersion);
+        // 3. DB에 저장하고 recommendationId 세팅
+        Long recommendationId = saveRecommendationResult(userId, quiz, result, promptVersion);
+        result.setRecommendationId(recommendationId);
 
         return result;
     }
@@ -187,7 +188,17 @@ public class GPTRecommendationService {
                                     // 가격 정보 추가
                                     enrichPriceInfo(parsedResponse);
 
-                                    // 가격 정보가 추가된 결과를 다시 JSON으로 변환
+                                    // DB에 먼저 저장하여 recommendationId 획득
+                                    Long recommendationId = saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
+                                    parsedResponse.setRecommendationId(recommendationId); // null일 수 있음 (저장 실패 시)
+
+                                    if (recommendationId != null) {
+                                        System.out.println("[GPT 스트리밍] DB 저장 완료, recommendationId: " + recommendationId);
+                                    } else {
+                                        System.err.println("[GPT 스트리밍] DB 저장 실패, recommendationId가 null입니다. 피드백 기능 비활성화됨.");
+                                    }
+
+                                    // 가격 정보와 recommendationId가 포함된 결과를 JSON으로 변환
                                     String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
 
                                     // 보정된 결과를 result 이벤트로 전송 (단일 라인 JSON)
@@ -201,9 +212,6 @@ public class GPTRecommendationService {
                                     emitter.send(SseEmitter.event()
                                             .name("done")
                                             .data("complete"));
-
-                                    // DB에 저장
-                                    saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
 
                                     emitter.complete();
                                 } catch (Exception e) {
@@ -461,7 +469,11 @@ public class GPTRecommendationService {
         }
     }
 
-    private void saveRecommendationResult(Long userId, QuizRequest quiz, RecommendationResponse result, PromptVersion promptVersion) {
+    /**
+     * 추천 결과를 DB에 저장하고 저장된 ID를 반환
+     * @return 저장된 RecommendationResult의 ID (저장 실패 시 null)
+     */
+    private Long saveRecommendationResult(Long userId, QuizRequest quiz, RecommendationResponse result, PromptVersion promptVersion) {
         try {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException(userId));
@@ -476,11 +488,14 @@ public class GPTRecommendationService {
                     .promptVersion(promptVersion) // A/B 테스트용 프롬프트 버전 저장
                     .build();
 
-            recommendationResultRepository.save(entity);
+            RecommendationResult saved = recommendationResultRepository.save(entity);
+            return saved.getId();
         } catch (UserNotFoundException e) {
             throw e;
         } catch (Exception e) {
-            throw new RecommendationSaveException(e);
+            System.err.println("[추천 결과 저장 실패] " + e.getMessage());
+            e.printStackTrace();
+            return null; // 저장 실패 시 null 반환 (추천 결과는 보여주되 피드백 불가)
         }
     }
 
