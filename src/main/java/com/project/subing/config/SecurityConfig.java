@@ -1,7 +1,10 @@
 package com.project.subing.config;
 
 import com.project.subing.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.security.SecurityProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -11,6 +14,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.filter.DelegatingFilterProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -18,6 +22,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 
 @Configuration
 @EnableWebSecurity
@@ -35,8 +40,8 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // 인증 관련 API 허용
-                .requestMatchers("/api/v1/users/signup", "/api/v1/users/login").permitAll()
+                // 인증 관련 API 및 Spring Boot 에러 페이지 허용
+                .requestMatchers("/api/v1/users/signup", "/api/v1/users/login", "/error").permitAll()
                 // WebSocket 엔드포인트 허용
                 .requestMatchers("/ws/**").permitAll()
                 // 관리자 API는 ADMIN 역할 필요
@@ -75,5 +80,19 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    /**
+     * SecurityFilterAutoConfiguration 제외 후 수동 등록.
+     * DispatcherType.REQUEST만 지정하여 SseEmitter.complete() 시 발생하는
+     * ASYNC 디스패치에서 보안 필터 체인이 실행되지 않도록 함.
+     */
+    @Bean
+    public FilterRegistrationBean<DelegatingFilterProxy> securityFilterChainRegistration() {
+        FilterRegistrationBean<DelegatingFilterProxy> registration =
+                new FilterRegistrationBean<>(new DelegatingFilterProxy("springSecurityFilterChain"));
+        registration.setDispatcherTypes(EnumSet.of(DispatcherType.REQUEST));
+        registration.setOrder(SecurityProperties.BASIC_AUTH_ORDER);
+        return registration;
     }
 }
