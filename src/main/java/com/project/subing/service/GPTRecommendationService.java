@@ -304,6 +304,7 @@ public class GPTRecommendationService {
 
             중요: JSON만 응답하세요. 마크다운 코드블록(```)이나 설명 텍스트를 포함하지 마세요.
             반드시 아래 출력 형식을 따라주세요.
+            한글 문장(mainReason, pros, cons, tip, summary, alternatives)은 올바른 띄어쓰기를 적용하세요.
 
             출력 형식:
             {
