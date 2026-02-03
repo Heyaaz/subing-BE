@@ -379,8 +379,8 @@ public class GPTRecommendationService {
             """,
                 String.join(", ", quiz.getInterests()),
                 quiz.getBudget(),
-                quiz.getPurpose(),
-                String.join(", ", quiz.getPriorities()),
+                quiz.getPurposeLabel(),
+                quiz.getPrioritiesFormatted(),
                 preferenceSection.toString(),
                 serviceList.toString()
         );
