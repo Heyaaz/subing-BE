@@ -114,7 +114,8 @@ public class GPTRecommendationService {
                 Flux<String> streamFlux = chatModel.stream(gptPrompt)
                         .map(chatResponse -> {
                             if (chatResponse.getResult() != null &&
-                                chatResponse.getResult().getOutput() != null) {
+                                chatResponse.getResult().getOutput() != null &&
+                                chatResponse.getResult().getOutput().getText() != null) {
                                 return chatResponse.getResult().getOutput().getText();
                             }
                             return "";
@@ -300,6 +301,8 @@ public class GPTRecommendationService {
             %s
 
             상위 3-5개 서비스를 JSON 형식으로 추천해주세요.
+
+            중요: JSON만 응답하세요. 마크다운 코드블록(```)이나 설명 텍스트를 포함하지 마세요.
             반드시 아래 출력 형식을 따라주세요.
 
             출력 형식:
@@ -352,7 +355,12 @@ public class GPTRecommendationService {
 
     private RecommendationResponse parseResponse(String jsonContent) {
         try {
-            return objectMapper.readValue(jsonContent, RecommendationResponse.class);
+            // 마크다운 코드펜스 제거 (방어적 파싱)
+            String cleaned = jsonContent
+                .replaceAll("```json\\s*", "")
+                .replaceAll("```\\s*", "")
+                .trim();
+            return objectMapper.readValue(cleaned, RecommendationResponse.class);
         } catch (Exception e) {
             throw new GptParsingException(e);
         }
