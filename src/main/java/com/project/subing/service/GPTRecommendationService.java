@@ -75,12 +75,22 @@ public class GPTRecommendationService {
     public RecommendationResponse getRecommendationFromCache(Long userId, QuizRequest quiz, UserPreference userPreference, PromptVersion promptVersion) {
         // 1. 프롬프트 생성
         String prompt = buildPrompt(quiz, userPreference);
+        System.out.println("[GPT 추천] 프롬프트에 서비스 ID 포함 여부 확인:");
+        System.out.println(prompt.substring(0, Math.min(500, prompt.length())) + "...");
 
         // 2. GPT API 호출
         String response = callGPTAPI(prompt, promptVersion);
+        System.out.println("[GPT 추천] GPT 응답 미리보기:");
+        System.out.println(response.substring(0, Math.min(300, response.length())) + "...");
 
         // 3. JSON 파싱
-        return parseResponse(response);
+        RecommendationResponse parsedResponse = parseResponse(response);
+        System.out.println("[GPT 추천] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
+        parsedResponse.getRecommendations().forEach(item ->
+            System.out.println("[GPT 추천] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
+        );
+
+        return parsedResponse;
     }
 
     /**
@@ -101,6 +111,8 @@ public class GPTRecommendationService {
 
                 // 3. 프롬프트 생성
                 String prompt = buildPrompt(quiz, userPreference);
+                System.out.println("[GPT 스트리밍] 프롬프트에 서비스 ID 포함 여부 확인:");
+                System.out.println(prompt.substring(0, Math.min(500, prompt.length())) + "...");
                 String systemPrompt = promptVersion.getSystemPrompt();
 
                 List<Message> messages = List.of(
@@ -173,6 +185,10 @@ public class GPTRecommendationService {
 
                                     // DB에 저장
                                     RecommendationResponse parsedResponse = parseResponse(correctedJson);
+                                    System.out.println("[GPT 스트리밍] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
+                                    parsedResponse.getRecommendations().forEach(item ->
+                                        System.out.println("[GPT 스트리밍] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
+                                    );
                                     saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
 
                                     emitter.complete();
@@ -275,8 +291,9 @@ public class GPTRecommendationService {
         StringBuilder serviceList = new StringBuilder();
         for (int i = 0; i < services.size(); i++) {
             ServiceEntity service = services.get(i);
-            serviceList.append(String.format("%d. %s - %s - %s\n",
+            serviceList.append(String.format("%d. [ID: %d] %s - %s - %s\n",
                     i + 1,
+                    service.getId(),
                     service.getServiceName(),
                     service.getCategory(),
                     service.getDescription() != null ? service.getDescription() : "서비스 설명 없음"
@@ -326,7 +343,7 @@ public class GPTRecommendationService {
             {
               "recommendations": [
                 {
-                  "serviceId": 숫자,
+                  "serviceId": 숫자 (필수: 위 서비스 목록의 [ID: X] 값을 정확히 사용),
                   "serviceName": "서비스명",
                   "score": 0-100 점수,
                   "mainReason": "추천 이유",
@@ -338,6 +355,8 @@ public class GPTRecommendationService {
               "summary": "전체 요약",
               "alternatives": "대안 제안"
             }
+
+            중요: serviceId는 반드시 위 서비스 목록의 [ID: X] 값을 정확하게 사용하세요.
 
             한글 띄어쓰기 규칙 (반드시 준수):
             ❌ 잘못된 예: "구글드라이브는클라우드저장소와파일공유가매우유용하며업무효율성을높일수있습니다"
