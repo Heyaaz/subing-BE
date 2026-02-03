@@ -150,22 +150,38 @@ public class GPTRecommendationService {
                             emitter.completeWithError(error);
                         },
                         () -> {
-                            // 완료 시
-                            try {
-                                // 완료 이벤트 전송
-                                emitter.send(SseEmitter.event()
-                                        .name("done")
-                                        .data("complete"));
+                            // 완료 시 - Reactor 스레드에서 blocking 작업(chatModel.call) 방지 위해 별도 스레드 사용
+                            String responseText = fullResponse.toString();
+                            System.out.println("[스트리밍 완료] 전체 응답 길이: " + responseText.length());
 
-                                // DB에 저장 (비동기)
-                                String responseText = fullResponse.toString();
-                                RecommendationResponse parsedResponse = parseResponse(responseText);
-                                saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
+                            executorService.execute(() -> {
+                                try {
+                                    // 한글 띄어쓰기 보정 (blocking call이므로 executor 스레드에서 실행)
+                                    String correctedJson = fixKoreanSpacing(responseText);
 
-                                emitter.complete();
-                            } catch (Exception e) {
-                                emitter.completeWithError(e);
-                            }
+                                    // 보정된 결과를 result 이벤트로 전송 (단일 라인 JSON)
+                                    System.out.println("[SSE] result 이벤트 전송 시작");
+                                    emitter.send(SseEmitter.event()
+                                            .name("result")
+                                            .data(correctedJson));
+                                    System.out.println("[SSE] result 이벤트 전송 완료");
+
+                                    // 완료 이벤트 전송
+                                    emitter.send(SseEmitter.event()
+                                            .name("done")
+                                            .data("complete"));
+
+                                    // DB에 저장
+                                    RecommendationResponse parsedResponse = parseResponse(correctedJson);
+                                    saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
+
+                                    emitter.complete();
+                                } catch (Exception e) {
+                                    System.err.println("[스트리밍 완료 에러]: " + e.getMessage());
+                                    e.printStackTrace();
+                                    emitter.completeWithError(e);
+                                }
+                            });
                         }
                 );
 
@@ -322,6 +338,11 @@ public class GPTRecommendationService {
               "summary": "전체 요약",
               "alternatives": "대안 제안"
             }
+
+            한글 띄어쓰기 규칙 (반드시 준수):
+            ❌ 잘못된 예: "구글드라이브는클라우드저장소와파일공유가매우유용하며업무효율성을높일수있습니다"
+            ✅ 올바른 예: "구글드라이브는 클라우드 저장소와 파일 공유가 매우 유용하며 업무 효율성을 높일 수 있습니다"
+            모든 한글 값(mainReason, pros, cons, tip, summary, alternatives)에 적용하세요.
             """,
                 String.join(", ", quiz.getInterests()),
                 quiz.getBudget(),
@@ -351,6 +372,46 @@ public class GPTRecommendationService {
 
         } catch (Exception e) {
             throw new GptApiException(e);
+        }
+    }
+
+    /**
+     * ChatModel을 활용한 한글 띄어쓰기 보정.
+     * GPT가 JSON 내 한글 값에서 띄어쓰기를 빠뜨리는 경우를 수정.
+     */
+    private String fixKoreanSpacing(String jsonText) {
+        try {
+            System.out.println("[fixKoreanSpacing] 입력 텍스트 길이: " + jsonText.length());
+
+            List<Message> messages = List.of(
+                    new SystemMessage("당신은 한국어 텍스트의 띄어쓰기를 수정하는 전문가입니다. " +
+                            "입력받은 JSON의 한글 텍스트 값들에만 올바른 띄어쓰기를 추가하여 반환해주세요. " +
+                            "JSON 구조, 키, 숫자 값은 변경하지 마세요. " +
+                            "중요: JSON을 한 줄로 압축해서 반환하세요 (개행 문자 없이). JSON만 답하세요."),
+                    new UserMessage(jsonText)
+            );
+
+            String corrected = chatModel.call(new Prompt(messages))
+                    .getResult().getOutput().getText();
+
+            // 코드펜스 제거
+            corrected = corrected
+                    .replaceAll("```json\\s*", "")
+                    .replaceAll("```\\s*", "")
+                    .trim();
+
+            // SSE 전송을 위해 단일 라인으로 변환 (개행 문자 제거)
+            corrected = corrected.replace("\n", "").replace("\r", "");
+
+            System.out.println("[fixKoreanSpacing] 보정 완료, 길이: " + corrected.length());
+            System.out.println("[fixKoreanSpacing] 미리보기: " + corrected.substring(0, Math.min(200, corrected.length())) + "...");
+
+            return corrected;
+        } catch (Exception e) {
+            System.err.println("[fixKoreanSpacing] 보정 실패: " + e.getMessage());
+            e.printStackTrace();
+            // 보정 실패 시 원본 반환 (개행 제거는 필수)
+            return jsonText.replace("\n", "").replace("\r", "");
         }
     }
 
