@@ -5,8 +5,10 @@ import com.project.subing.domain.preference.enums.ProfileType;
 import com.project.subing.domain.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.type.SqlTypes;
 
 /**
  * 사용자 성향 프로필 (테스트 결과)
@@ -50,6 +52,7 @@ public class UserPreference extends SoftDeletableEntity {
     private Integer digitalToolScore; // 디지털 도구 활용 점수
 
     // 추가 정보
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "JSON")
     private String interestedCategories; // 관심 카테고리 (JSON 배열)
     // 예시: ["스트리밍", "음악", "독서"]
