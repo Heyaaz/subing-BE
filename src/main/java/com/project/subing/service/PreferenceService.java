@@ -106,11 +106,11 @@ public class PreferenceService {
     }
 
     /**
-     * 사용자 프로필 삭제 (재검사 준비)
+     * 사용자 프로필 삭제 (재검사 준비) - Soft Delete
      */
     @Transactional
     public void deleteUserPreference(Long userId) {
-        userPreferenceRepository.deleteByUserId(userId);
+        userPreferenceRepository.softDeleteByUserId(userId);
         log.info("사용자 {}의 성향 프로필 삭제 완료", userId);
     }
 

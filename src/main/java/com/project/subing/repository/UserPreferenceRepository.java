@@ -4,6 +4,9 @@ import com.project.subing.domain.preference.entity.UserPreference;
 import com.project.subing.domain.preference.enums.ProfileType;
 import com.project.subing.domain.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -33,7 +36,9 @@ public interface UserPreferenceRepository extends JpaRepository<UserPreference, 
     List<UserPreference> findByProfileType(ProfileType profileType);
 
     /**
-     * 사용자 프로필 삭제
+     * 사용자 프로필 Soft Delete
      */
-    void deleteByUserId(Long userId);
+    @Modifying
+    @Query("UPDATE UserPreference up SET up.delYn = 'Y' WHERE up.user.id = :userId")
+    void softDeleteByUserId(@Param("userId") Long userId);
 }
