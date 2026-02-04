@@ -60,7 +60,7 @@ public class GPTRecommendationService {
 
     public RecommendationResponse getRecommendations(Long userId, QuizRequest quiz) {
         // 0-1. 사용자 성향 데이터 조회 (Optional)
-        UserPreference userPreference = userPreferenceRepository.findByUserId(userId).orElse(null);
+        UserPreference userPreference = userPreferenceRepository.findFirstByUserIdOrderByCreatedAtDesc(userId).orElse(null);
 
         // 0-2. A/B 테스트를 위한 랜덤 프롬프트 버전 선택
         PromptVersion promptVersion = PromptVersion.random();
@@ -111,7 +111,7 @@ public class GPTRecommendationService {
         executorService.execute(() -> {
             try {
                 // 1. 사용자 성향 데이터 조회
-                UserPreference userPreference = userPreferenceRepository.findByUserId(userId).orElse(null);
+                UserPreference userPreference = userPreferenceRepository.findFirstByUserIdOrderByCreatedAtDesc(userId).orElse(null);
 
                 // 2. 프롬프트 버전 선택
                 PromptVersion promptVersion = PromptVersion.random();

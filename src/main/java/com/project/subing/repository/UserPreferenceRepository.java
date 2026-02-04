@@ -16,14 +16,14 @@ import java.util.Optional;
 public interface UserPreferenceRepository extends JpaRepository<UserPreference, Long> {
 
     /**
-     * 사용자 ID로 프로필 조회
+     * 사용자 ID로 최신 프로필 조회
      */
-    Optional<UserPreference> findByUserId(Long userId);
+    Optional<UserPreference> findFirstByUserIdOrderByCreatedAtDesc(Long userId);
 
     /**
-     * 사용자로 프로필 조회
+     * 사용자로 최신 프로필 조회
      */
-    Optional<UserPreference> findByUser(User user);
+    Optional<UserPreference> findFirstByUserOrderByCreatedAtDesc(User user);
 
     /**
      * 사용자 프로필 존재 여부 확인
@@ -34,11 +34,4 @@ public interface UserPreferenceRepository extends JpaRepository<UserPreference, 
      * 특정 프로필 타입의 사용자 목록 조회
      */
     List<UserPreference> findByProfileType(ProfileType profileType);
-
-    /**
-     * 사용자 프로필 Soft Delete
-     */
-    @Modifying
-    @Query("UPDATE UserPreference up SET up.delYn = 'Y' WHERE up.user.id = :userId")
-    void softDeleteByUserId(@Param("userId") Long userId);
 }

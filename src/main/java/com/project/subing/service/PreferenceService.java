@@ -62,55 +62,39 @@ public class PreferenceService {
         // 관심 카테고리 JSON 생성
         String interestedCategories = generateInterestedCategories(categoryTags);
 
-        // 기존 프로필이 있으면 업데이트, 없으면 생성
-        UserPreference userPreference = userPreferenceRepository.findByUserId(userId)
-            .orElse(null);
+        // 매번 새 레코드 생성 (이력 관리)
+        UserPreference userPreference = UserPreference.builder()
+            .user(user)
+            .profileType(profileType)
+            .contentScore(scores.get("contentScore"))
+            .priceSensitivityScore(scores.get("priceSensitivityScore"))
+            .healthScore(scores.get("healthScore"))
+            .selfDevelopmentScore(scores.get("selfDevelopmentScore"))
+            .digitalToolScore(scores.get("digitalToolScore"))
+            .interestedCategories(interestedCategories)
+            .budgetRange(budgetRange)
+            .build();
 
-        if (userPreference == null) {
-            // 신규 생성
-            userPreference = UserPreference.builder()
-                .user(user)
-                .profileType(profileType)
-                .contentScore(scores.get("contentScore"))
-                .priceSensitivityScore(scores.get("priceSensitivityScore"))
-                .healthScore(scores.get("healthScore"))
-                .selfDevelopmentScore(scores.get("selfDevelopmentScore"))
-                .digitalToolScore(scores.get("digitalToolScore"))
-                .interestedCategories(interestedCategories)
-                .budgetRange(budgetRange)
-                .build();
-
-            userPreference = userPreferenceRepository.save(userPreference);
-        } else {
-            // 기존 프로필 업데이트
-            userPreference.updateScores(
-                scores.get("contentScore"),
-                scores.get("priceSensitivityScore"),
-                scores.get("healthScore"),
-                scores.get("selfDevelopmentScore"),
-                scores.get("digitalToolScore")
-            );
-            userPreference.updateProfileType(profileType);
-            userPreference.updateAdditionalInfo(interestedCategories, budgetRange);
-        }
+        userPreference = userPreferenceRepository.save(userPreference);
 
         log.info("사용자 {}의 성향 프로필 저장 완료: {}", userId, profileType);
         return userPreference;
     }
 
     /**
-     * 사용자 프로필 조회
+     * 사용자 프로필 조회 (최신)
      */
     public Optional<UserPreference> getUserPreference(Long userId) {
-        return userPreferenceRepository.findByUserId(userId);
+        return userPreferenceRepository.findFirstByUserIdOrderByCreatedAtDesc(userId);
     }
 
     /**
-     * 사용자 프로필 삭제 (재검사 준비) - Soft Delete
+     * 사용자 프로필 삭제 - Soft Delete (@SQLDelete)
      */
     @Transactional
     public void deleteUserPreference(Long userId) {
-        userPreferenceRepository.softDeleteByUserId(userId);
+        userPreferenceRepository.findFirstByUserIdOrderByCreatedAtDesc(userId)
+            .ifPresent(userPreferenceRepository::delete);
         log.info("사용자 {}의 성향 프로필 삭제 완료", userId);
     }
 
