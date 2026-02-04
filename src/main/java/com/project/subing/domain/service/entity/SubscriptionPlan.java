@@ -1,52 +1,45 @@
 package com.project.subing.domain.service.entity;
 
+import com.project.subing.domain.common.SoftDeletableEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Table(name = "subscription_plans")
+@SQLDelete(sql = "UPDATE subscription_plans SET del_yn = 'Y' WHERE id = ?")
+@SQLRestriction("del_yn = 'N'")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class SubscriptionPlan {
-    
+public class SubscriptionPlan extends SoftDeletableEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "service_id", nullable = false)
     private ServiceEntity service;
-    
+
     @Column(nullable = false, length = 100)
     private String planName;
-    
+
     @Column(nullable = false)
     private Integer monthlyPrice;
-    
+
     @Column(columnDefinition = "TEXT")
     private String description;
-    
+
     @Column(columnDefinition = "TEXT")
     private String features;  // JSON 형태로 저장
-    
+
     @Column
     @Builder.Default
     private Boolean isPopular = false;
-    
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
-    
+
     // 비즈니스 로직
     public void updatePrice(Integer newPrice) {
         this.monthlyPrice = newPrice;

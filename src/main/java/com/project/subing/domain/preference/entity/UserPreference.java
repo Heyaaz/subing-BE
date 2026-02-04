@@ -1,24 +1,25 @@
 package com.project.subing.domain.preference.entity;
 
+import com.project.subing.domain.common.SoftDeletableEntity;
 import com.project.subing.domain.preference.enums.ProfileType;
 import com.project.subing.domain.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 /**
  * 사용자 성향 프로필 (테스트 결과)
  */
 @Entity
 @Table(name = "user_preferences")
+@SQLDelete(sql = "UPDATE user_preferences SET del_yn = 'Y' WHERE id = ?")
+@SQLRestriction("del_yn = 'N'")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class UserPreference {
+public class UserPreference extends SoftDeletableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -55,14 +56,6 @@ public class UserPreference {
 
     @Column(length = 50)
     private String budgetRange; // 예산 범위 (예: "월 1~3만원")
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     /**
      * 점수 업데이트

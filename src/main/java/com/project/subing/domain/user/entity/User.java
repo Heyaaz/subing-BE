@@ -1,32 +1,31 @@
 package com.project.subing.domain.user.entity;
 
+import com.project.subing.domain.common.SoftDeletableEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Table(name = "users")
+@SQLDelete(sql = "UPDATE users SET del_yn = 'Y' WHERE id = ?")
+@SQLRestriction("del_yn = 'N'")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class User {
-    
+public class User extends SoftDeletableEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(nullable = false, unique = true, length = 255)
     private String email;
-    
+
     @Column(nullable = false, length = 255)
     private String password;
-    
+
     @Column(nullable = false, length = 100)
     private String name;
 
@@ -40,16 +39,6 @@ public class User {
     @Builder.Default
     private UserRole role = UserRole.USER;
 
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
-    
-    // 양방향 연관관계는 나중에 추가 (순환 참조 방지)
-    
     // 비즈니스 로직
     public void updatePassword(String newPassword) {
         this.password = newPassword;

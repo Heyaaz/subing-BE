@@ -1,13 +1,12 @@
 package com.project.subing.domain.review.entity;
 
+import com.project.subing.domain.common.SoftDeletableEntity;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Table(
@@ -16,11 +15,13 @@ import java.time.LocalDateTime;
         @UniqueConstraint(columnNames = {"user_id", "service_id"})
     }
 )
+@SQLDelete(sql = "UPDATE service_reviews SET del_yn = 'Y' WHERE id = ?")
+@SQLRestriction("del_yn = 'N'")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class ServiceReview {
+public class ServiceReview extends SoftDeletableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,14 +40,6 @@ public class ServiceReview {
 
     @Column(columnDefinition = "TEXT")
     private String content;
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     // 비즈니스 로직
     public void updateReview(Integer rating, String content) {
