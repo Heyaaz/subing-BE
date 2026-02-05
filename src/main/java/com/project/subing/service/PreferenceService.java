@@ -139,13 +139,31 @@ public class PreferenceService {
 
     /**
      * 점수 정규화 (0-100 범위로)
+     * 각 점수 항목별 실제 범위를 기반으로 정규화
      */
     private void normalizeScores(Map<String, Integer> scores) {
+        // 각 점수 항목의 실제 예상 범위 (min, max)
+        Map<String, int[]> ranges = Map.of(
+            "contentScore", new int[]{0, 90},
+            "priceSensitivityScore", new int[]{-100, 100},
+            "healthScore", new int[]{0, 75},
+            "selfDevelopmentScore", new int[]{0, 75},
+            "digitalToolScore", new int[]{0, 55}
+        );
+
+        // forEach 내에서 원본 Map 수정을 피하기 위해 별도 Map에 저장
+        Map<String, Integer> normalizedScores = new HashMap<>();
         scores.forEach((key, value) -> {
-            // 점수 범위: -100 ~ +200 정도 → 0 ~ 100으로 정규화
-            int normalized = Math.max(0, Math.min(100, (value + 50))); // 간단한 정규화
-            scores.put(key, normalized);
+            int[] range = ranges.getOrDefault(key, new int[]{-100, 200});
+            int min = range[0];
+            int max = range[1];
+            // (value - min) / (max - min) * 100 으로 정규화
+            int normalized = (int) Math.round((value - min) * 100.0 / (max - min));
+            normalizedScores.put(key, Math.max(0, Math.min(100, normalized)));
         });
+
+        // 원본 Map에 정규화된 값 적용
+        scores.putAll(normalizedScores);
     }
 
     /**
@@ -187,8 +205,6 @@ public class PreferenceService {
             .max(Map.Entry.comparingByValue())
             .map(Map.Entry::getKey)
             .orElse("contentScore");
-
-        int topScore = scores.get(topCategory);
 
         // 2. 프로필 타입 매칭
         // 콘텐츠 덕후형 (콘텐츠 점수 높음)
@@ -232,11 +248,12 @@ public class PreferenceService {
 
     /**
      * 예산 범위 결정
+     * 정규화된 점수(0-100)를 기반으로 예산 범위 매핑
      */
     private String determineBudgetRange(int priceSensitivityScore) {
-        if (priceSensitivityScore >= 70) {
+        if (priceSensitivityScore >= 55) {
             return "월 1만원 이하";
-        } else if (priceSensitivityScore >= 40) {
+        } else if (priceSensitivityScore >= 35) {
             return "월 1~3만원";
         } else if (priceSensitivityScore >= 20) {
             return "월 3~5만원";
