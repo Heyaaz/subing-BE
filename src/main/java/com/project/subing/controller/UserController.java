@@ -1,10 +1,7 @@
 package com.project.subing.controller;
 
 import com.project.subing.dto.common.ApiResponse;
-import com.project.subing.dto.user.LoginRequest;
-import com.project.subing.dto.user.SignupRequest;
-import com.project.subing.dto.user.UserResponse;
-import com.project.subing.dto.user.UserTierInfoResponse;
+import com.project.subing.dto.user.*;
 import com.project.subing.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +28,12 @@ public class UserController {
     public ResponseEntity<ApiResponse<UserResponse>> login(@Valid @RequestBody LoginRequest request) {
         UserResponse response = userService.login(request);
         return ResponseEntity.ok(ApiResponse.success(response, "로그인에 성공했습니다."));
+    }
+
+    @PostMapping("/login/google")
+    public ResponseEntity<ApiResponse<UserResponse>> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        UserResponse response = userService.googleLogin(request);
+        return ResponseEntity.ok(ApiResponse.success(response, "Google 로그인에 성공했습니다."));
     }
 
     @GetMapping("/me/tier-info")

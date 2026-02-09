@@ -41,7 +41,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 // 인증 관련 API 및 Spring Boot 에러 페이지 허용
-                .requestMatchers("/api/v1/users/signup", "/api/v1/users/login", "/error").permitAll()
+                .requestMatchers("/api/v1/users/signup", "/api/v1/users/login", "/api/v1/users/login/google", "/error").permitAll()
                 // WebSocket 엔드포인트 허용
                 .requestMatchers("/ws/**").permitAll()
                 // 관리자 API는 ADMIN 역할 필요
