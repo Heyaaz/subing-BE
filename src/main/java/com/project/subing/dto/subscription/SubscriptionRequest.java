@@ -35,6 +35,9 @@ public class SubscriptionRequest {
 
     @NotBlank(message = "시작월은 필수입니다.")
     private String startedAt;
-    
+
+    /** 구독 종료월 (선택, "yyyy-MM" 형식) */
+    private String endedAt;
+
     private String notes;
 }

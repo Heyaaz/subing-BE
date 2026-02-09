@@ -33,6 +33,7 @@ public class SubscriptionResponse {
     private Boolean isActive;
     private String notes;
     private LocalDate startedAt;
+    private LocalDate endedAt;
     private LocalDateTime createdAt;
 
     public static SubscriptionResponse from(UserSubscription subscription) {
@@ -52,6 +53,7 @@ public class SubscriptionResponse {
                 .isActive(subscription.getIsActive())
                 .notes(subscription.getNotes())
                 .startedAt(subscription.getStartedAt())
+                .endedAt(subscription.getEndedAt())
                 .createdAt(subscription.getCreatedAt())
                 .build();
     }

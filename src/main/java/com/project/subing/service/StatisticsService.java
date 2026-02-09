@@ -14,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -41,15 +40,7 @@ public class StatisticsService {
         // 특정 월(year, month)에 활성이었던 구독만 필터링
         YearMonth targetMonth = YearMonth.of(year, month);
         List<UserSubscription> activeInMonth = subscriptions.stream()
-            .filter(sub -> {
-                LocalDate startDate = sub.getStartedAt();
-                // startedAt 없으면 기존 데이터 호환을 위해 해당 월에 포함
-                if (startDate == null) return true;
-
-                YearMonth subStartMonth = YearMonth.from(startDate);
-                // 구독 시작월이 조회월 이전이거나 같으면 해당 월에 활성
-                return !subStartMonth.isAfter(targetMonth);
-            })
+            .filter(sub -> sub.isActiveInMonth(targetMonth))
             .collect(Collectors.toList());
 
         int totalAmount = 0;

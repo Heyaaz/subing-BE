@@ -11,6 +11,7 @@ import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 
 @Entity
 @Table(name = "user_subscriptions")
@@ -64,7 +65,22 @@ public class UserSubscription extends SoftDeletableEntity {
     @Column(name = "started_at")
     private LocalDate startedAt;
 
+    /** 구독 종료월 (년-월만 사용, 일은 1일로 저장). nullable: 아직 활성인 구독 */
+    @Column(name = "ended_at")
+    private LocalDate endedAt;
+
     // 비즈니스 로직
+
+    /** 해당 월에 구독이 활성이었는지 판단 */
+    public boolean isActiveInMonth(YearMonth month) {
+        if (startedAt != null && YearMonth.from(startedAt).isAfter(month)) {
+            return false;
+        }
+        if (endedAt != null && YearMonth.from(endedAt).isBefore(month)) {
+            return false;
+        }
+        return true;
+    }
     public LocalDate getNextBillingDate() {
         LocalDate today = LocalDate.now();
         int currentDay = today.getDayOfMonth();
@@ -108,6 +124,10 @@ public class UserSubscription extends SoftDeletableEntity {
 
     public void setStartedAt(LocalDate startedAt) {
         this.startedAt = startedAt;
+    }
+
+    public void setEndedAt(LocalDate endedAt) {
+        this.endedAt = endedAt;
     }
 
     public void cancel() {

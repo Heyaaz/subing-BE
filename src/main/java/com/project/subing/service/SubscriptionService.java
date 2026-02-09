@@ -44,6 +44,7 @@ public class SubscriptionService {
         com.project.subing.domain.common.Currency currency = request.getCurrency() != null
                 ? request.getCurrency() : com.project.subing.domain.common.Currency.KRW;
         LocalDate startedAt = parseStartedAt(request.getStartedAt());
+        LocalDate endedAt = parseStartedAt(request.getEndedAt());
         UserSubscription subscription = UserSubscription.builder()
                 .user(user)
                 .service(service)
@@ -54,6 +55,7 @@ public class SubscriptionService {
                 .billingCycle(request.getBillingCycle())
                 .notes(request.getNotes())
                 .startedAt(startedAt)
+                .endedAt(endedAt)
                 .build();
         
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
@@ -73,6 +75,7 @@ public class SubscriptionService {
                 .isActive(savedSubscription.getIsActive())
                 .notes(savedSubscription.getNotes())
                 .startedAt(savedSubscription.getStartedAt())
+                .endedAt(savedSubscription.getEndedAt())
                 .createdAt(savedSubscription.getCreatedAt())
                 .build();
     }
@@ -179,6 +182,7 @@ public class SubscriptionService {
         if (request.getStartedAt() != null) {
             subscription.setStartedAt(parseStartedAt(request.getStartedAt()));
         }
+        subscription.setEndedAt(parseStartedAt(request.getEndedAt()));
 
         UserSubscription savedSubscription = userSubscriptionRepository.save(subscription);
 
@@ -231,6 +235,7 @@ public class SubscriptionService {
                 .isActive(subscription.getIsActive())
                 .notes(subscription.getNotes())
                 .startedAt(subscription.getStartedAt())
+                .endedAt(subscription.getEndedAt())
                 .createdAt(subscription.getCreatedAt())
                 .build();
     }
