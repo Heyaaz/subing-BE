@@ -10,11 +10,6 @@ spring:
         default_batch_fetch_size: 100
     open-in-view: false
 
-  security:
-    oauth2:
-      client:
-        registration: {}  # Phase 2: 소셜 로그인
-
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration
@@ -24,3 +19,9 @@ jwt:
   secret: ${JWT_SECRET:subing-local-dev-secret-key-at-least-32-chars-for-hs256}
   access-token-validity: ${JWT_ACCESS_TOKEN_VALIDITY:86400000}  # 24시간
   refresh-token-validity: 604800000  # 7일
+
+# Google OAuth
+oauth:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}

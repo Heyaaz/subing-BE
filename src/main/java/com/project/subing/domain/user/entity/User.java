@@ -39,6 +39,14 @@ public class User extends SoftDeletableEntity {
     @Builder.Default
     private UserRole role = UserRole.USER;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    @Builder.Default
+    private AuthProvider provider = AuthProvider.LOCAL;
+
+    @Column(length = 255)
+    private String providerId;
+
     // 비즈니스 로직
     public void updatePassword(String newPassword) {
         this.password = newPassword;
@@ -66,5 +74,14 @@ public class User extends SoftDeletableEntity {
 
     public boolean isAdmin() {
         return this.role == UserRole.ADMIN;
+    }
+
+    public boolean isSocialUser() {
+        return this.provider != AuthProvider.LOCAL;
+    }
+
+    public void linkSocialProvider(AuthProvider provider, String providerId) {
+        this.provider = provider;
+        this.providerId = providerId;
     }
 }

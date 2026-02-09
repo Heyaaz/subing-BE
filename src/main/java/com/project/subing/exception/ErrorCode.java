@@ -66,7 +66,8 @@ public enum ErrorCode {
     // 502 Bad Gateway - 외부 API 오류
     // ============================================================
     GPT_API_ERROR("502", "GPT API 호출에 실패했습니다"),
-    GPT_PARSING_ERROR("502", "GPT 응답 파싱에 실패했습니다");
+    GPT_PARSING_ERROR("502", "GPT 응답 파싱에 실패했습니다"),
+    GOOGLE_AUTH_ERROR("502", "Google 인증에 실패했습니다");
 
     /**
      * HTTP 상태 코드 (문자열)

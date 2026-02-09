@@ -22,4 +22,6 @@ public class UserResponse {
     private UserRole role;
     private UserTier tier;
     private LocalDateTime createdAt;
+    @Builder.Default
+    private boolean isNewUser = false;
 }
