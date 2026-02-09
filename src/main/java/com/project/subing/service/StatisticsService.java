@@ -35,7 +35,7 @@ public class StatisticsService {
     private static final double USD_TO_KRW_RATE = 1300.0;
     
     public MonthlyExpenseResponse getMonthlyExpense(Long userId, Integer year, Integer month) {
-        List<UserSubscription> subscriptions = userSubscriptionRepository.findByUserIdAndIsActiveTrue(userId);
+        List<UserSubscription> subscriptions = userSubscriptionRepository.findByUserId(userId);
 
         // 특정 월(year, month)에 활성이었던 구독만 필터링
         YearMonth targetMonth = YearMonth.of(year, month);
