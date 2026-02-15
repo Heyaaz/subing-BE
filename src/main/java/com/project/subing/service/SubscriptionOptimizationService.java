@@ -4,7 +4,6 @@ import com.project.subing.domain.common.ServiceCategory;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.service.entity.SubscriptionPlan;
 import com.project.subing.domain.subscription.entity.UserSubscription;
-import com.project.subing.repository.ServiceRepository;
 import com.project.subing.repository.SubscriptionPlanRepository;
 import com.project.subing.repository.UserSubscriptionRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +21,6 @@ import java.util.stream.Collectors;
 public class SubscriptionOptimizationService {
 
     private final UserSubscriptionRepository userSubscriptionRepository;
-    private final ServiceRepository serviceRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
 
     /**
@@ -30,7 +28,8 @@ public class SubscriptionOptimizationService {
      * 같은 카테고리의 활성 구독이 2개 이상인 경우 중복으로 판단
      */
     public List<DuplicateServiceGroup> detectDuplicateServices(Long userId) {
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findByUserIdAndIsActiveTrue(userId);
+        List<UserSubscription> activeSubscriptions =
+                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
 
         // 카테고리별로 그룹화
         Map<ServiceCategory, List<UserSubscription>> categoryMap = activeSubscriptions.stream()
@@ -43,7 +42,6 @@ public class SubscriptionOptimizationService {
                 ServiceCategory category = entry.getKey();
                 List<UserSubscription> subscriptions = entry.getValue();
 
-                // 총 비용 계산
                 int totalCost = subscriptions.stream()
                         .mapToInt(UserSubscription::getMonthlyPrice)
                         .sum();
@@ -63,58 +61,92 @@ public class SubscriptionOptimizationService {
     }
 
     /**
-     * 저렴한 대안 제안
-     * 현재 구독보다 저렴한 동일 카테고리의 다른 서비스 플랜 찾기
+     * 저렴한 대안 제안 (N+1 쿼리 최적화 + 동일 서비스 다운그레이드 포함)
      */
     public List<CheaperAlternative> findCheaperAlternatives(Long userId) {
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findByUserIdAndIsActiveTrue(userId);
+        // 1. 활성 구독 조회 (Service JOIN FETCH) - 1 쿼리
+        List<UserSubscription> activeSubscriptions =
+                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
+
+        if (activeSubscriptions.isEmpty()) return Collections.emptyList();
+
+        // 2. 구독 중인 카테고리 수집
+        Set<ServiceCategory> categories = activeSubscriptions.stream()
+                .map(sub -> sub.getService().getCategory())
+                .collect(Collectors.toSet());
+
+        // 3. 해당 카테고리의 모든 플랜 한 번에 조회 - 1 쿼리
+        List<SubscriptionPlan> allCategoryPlans =
+                subscriptionPlanRepository.findByServiceCategoryIn(categories);
+
+        // 4. Map 변환 (서비스ID → 플랜 목록)
+        Map<Long, List<SubscriptionPlan>> plansByServiceId = allCategoryPlans.stream()
+                .collect(Collectors.groupingBy(plan -> plan.getService().getId()));
+
+        // 5. 서비스ID → ServiceEntity Map
+        Map<Long, ServiceEntity> serviceById = allCategoryPlans.stream()
+                .map(SubscriptionPlan::getService)
+                .collect(Collectors.toMap(ServiceEntity::getId, s -> s, (a, b) -> a));
+
+        // 6. 루프에서 Map 조회만 사용 (추가 쿼리 없음)
         List<CheaperAlternative> alternatives = new ArrayList<>();
 
         for (UserSubscription subscription : activeSubscriptions) {
-            ServiceCategory category = subscription.getService().getCategory();
             int currentPrice = subscription.getMonthlyPrice();
+            Long currentServiceId = subscription.getService().getId();
+            ServiceCategory currentCategory = subscription.getService().getCategory();
 
-            // 같은 카테고리의 다른 서비스 찾기
-            List<ServiceEntity> categoryServices = serviceRepository.findByCategory(category);
+            // 1단계: 동일 서비스 내 더 저렴한 플랜 (다운그레이드)
+            List<SubscriptionPlan> sameServicePlans =
+                    plansByServiceId.getOrDefault(currentServiceId, Collections.emptyList());
+            for (SubscriptionPlan plan : sameServicePlans) {
+                if (plan.getMonthlyPrice() < currentPrice) {
+                    int savings = currentPrice - plan.getMonthlyPrice();
 
-            for (ServiceEntity service : categoryServices) {
-                // 현재 구독 중인 서비스는 제외
-                if (service.getId().equals(subscription.getService().getId())) {
-                    continue;
+                    alternatives.add(new CheaperAlternative(
+                            subscription, subscription.getService(), plan,
+                            currentPrice, plan.getMonthlyPrice(), savings, true
+                    ));
+
+                    log.info("다운그레이드 대안 발견 - userId: {}, 서비스: {}, 현재: {}원, 대안 플랜: {} ({}원), 절약: {}원",
+                            userId, subscription.getService().getServiceName(),
+                            currentPrice, plan.getPlanName(), plan.getMonthlyPrice(), savings);
                 }
+            }
 
-                // 해당 서비스의 플랜 조회
-                List<SubscriptionPlan> plans = subscriptionPlanRepository.findByServiceId(service.getId());
+            // 2단계: 타 서비스 대안 (같은 카테고리, 다른 서비스)
+            for (Map.Entry<Long, List<SubscriptionPlan>> entry : plansByServiceId.entrySet()) {
+                Long serviceId = entry.getKey();
+                if (serviceId.equals(currentServiceId)) continue;
 
-                // 현재 가격보다 저렴한 플랜 찾기
-                for (SubscriptionPlan plan : plans) {
+                ServiceEntity altService = serviceById.get(serviceId);
+                if (altService == null || !altService.getCategory().equals(currentCategory)) continue;
+
+                for (SubscriptionPlan plan : entry.getValue()) {
                     if (plan.getMonthlyPrice() < currentPrice) {
                         int savings = currentPrice - plan.getMonthlyPrice();
 
                         alternatives.add(new CheaperAlternative(
-                                subscription,
-                                service,
-                                plan,
-                                currentPrice,
-                                plan.getMonthlyPrice(),
-                                savings
+                                subscription, altService, plan,
+                                currentPrice, plan.getMonthlyPrice(), savings, false
                         ));
 
                         log.info("저렴한 대안 발견 - userId: {}, 현재: {} ({}원), 대안: {} {} ({}원), 절약: {}원",
-                                userId,
-                                subscription.getService().getServiceName(),
-                                currentPrice,
-                                service.getServiceName(),
-                                plan.getPlanName(),
-                                plan.getMonthlyPrice(),
-                                savings);
+                                userId, subscription.getService().getServiceName(), currentPrice,
+                                altService.getServiceName(), plan.getPlanName(),
+                                plan.getMonthlyPrice(), savings);
                     }
                 }
             }
         }
 
-        // 절약 금액 기준 내림차순 정렬
-        alternatives.sort((a, b) -> Integer.compare(b.getSavings(), a.getSavings()));
+        // 정렬: 동일 서비스 다운그레이드 우선, 그 안에서 절약 금액 내림차순
+        alternatives.sort((a, b) -> {
+            if (a.isSameService() != b.isSameService()) {
+                return a.isSameService() ? -1 : 1;
+            }
+            return Integer.compare(b.getSavings(), a.getSavings());
+        });
 
         return alternatives;
     }
@@ -151,15 +183,18 @@ public class SubscriptionOptimizationService {
         private final int currentPrice;
         private final int alternativePrice;
         private final int savings;
+        private final boolean isSameService;
 
         public CheaperAlternative(UserSubscription currentSubscription, ServiceEntity alternativeService,
-                                 SubscriptionPlan alternativePlan, int currentPrice, int alternativePrice, int savings) {
+                                 SubscriptionPlan alternativePlan, int currentPrice, int alternativePrice,
+                                 int savings, boolean isSameService) {
             this.currentSubscription = currentSubscription;
             this.alternativeService = alternativeService;
             this.alternativePlan = alternativePlan;
             this.currentPrice = currentPrice;
             this.alternativePrice = alternativePrice;
             this.savings = savings;
+            this.isSameService = isSameService;
         }
 
         public UserSubscription getCurrentSubscription() {
@@ -184,6 +219,10 @@ public class SubscriptionOptimizationService {
 
         public int getSavings() {
             return savings;
+        }
+
+        public boolean isSameService() {
+            return isSameService;
         }
     }
 }

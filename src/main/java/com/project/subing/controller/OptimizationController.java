@@ -10,7 +10,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -36,8 +38,15 @@ public class OptimizationController {
                 .map(CheaperAlternativeResponse::from)
                 .collect(Collectors.toList());
 
+        // 구독별 최대 절약 금액만 합산 (과대 계산 방지)
         int totalPotentialSavings = alternativeResponses.stream()
-                .mapToInt(CheaperAlternativeResponse::getSavings)
+                .collect(Collectors.groupingBy(
+                        alt -> alt.getCurrentSubscription().getId(),
+                        Collectors.maxBy(Comparator.comparingInt(CheaperAlternativeResponse::getSavings))
+                ))
+                .values().stream()
+                .filter(Optional::isPresent)
+                .mapToInt(opt -> opt.get().getSavings())
                 .sum();
 
         String summary = generateSummary(duplicateResponses.size(), alternativeResponses.size(), totalPotentialSavings);
@@ -90,7 +99,7 @@ public class OptimizationController {
         }
 
         if (alternativeCount > 0) {
-            summary.append(String.format("%d개의 저렴한 대안이 있으며, 월 최대 %,d원을 절약할 수 있습니다.",
+            summary.append(String.format("%d개의 저렴한 대안이 있으며, 최적 선택 시 월 최대 %,d원을 절약할 수 있습니다.",
                     alternativeCount, totalSavings));
         }
 
