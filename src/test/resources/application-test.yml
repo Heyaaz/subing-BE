@@ -8,9 +8,9 @@ spring:
       api-key: test-dummy-key-for-context-loading
 
   datasource:
-    url: jdbc:h2:mem:testdb
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;NON_KEYWORDS=MONTH,YEAR
     username: sa
-    password: 
+    password:
     driver-class-name: org.h2.Driver
     
   jpa:
