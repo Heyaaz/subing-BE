@@ -30,10 +30,10 @@ public class Budget extends SoftDeletableEntity {
     @Column(name = "monthly_limit", nullable = false)
     private Long monthlyLimit;
 
-    @Column(name = "year", nullable = false)
+    @Column(nullable = false)
     private Integer year;
 
-    @Column(name = "month", nullable = false)
+    @Column(nullable = false)
     private Integer month;
 
     public void updateMonthlyLimit(Long newLimit) {
