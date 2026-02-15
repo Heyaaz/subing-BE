@@ -25,3 +25,21 @@ oauth:
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
+
+optimization:
+  engine:
+    pricing:
+      yearly-divisor: 12
+      same-service-switch-cost: 0
+      cross-service-base-switch-cost: 2000
+      yearly-billing-penalty: 2000
+      cross-category-penalty: 1000
+    portfolio:
+      max-changes-per-run: 3
+    performance:
+      top-k-plans-per-service: 5
+      candidate-search-timeout-ms: 100
+      portfolio-optimize-timeout-ms: 30
+      runtime-cache-ttl-ms: 30000
+    tracking:
+      enabled: true

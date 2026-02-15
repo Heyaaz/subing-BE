@@ -8,6 +8,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Getter
 @Builder
 @NoArgsConstructor
@@ -25,6 +27,10 @@ public class CheaperAlternativeResponse {
     private Integer savings;
     private Boolean isSameService;
     private String suggestionType;
+    private Integer switchCost;
+    private Integer netSavings;
+    private Integer confidence;
+    private List<String> reasonCodes;
     private String message;
 
     public static CheaperAlternativeResponse from(SubscriptionOptimizationService.CheaperAlternative alternative) {
@@ -33,16 +39,16 @@ public class CheaperAlternativeResponse {
 
         String message;
         if (sameService) {
-            message = String.format("%s의 플랜을 %s(으)로 다운그레이드하면 월 %,d원 절약할 수 있습니다.",
+            message = String.format("%s의 플랜을 %s(으)로 다운그레이드하면 월 순절감 %,d원 예상됩니다.",
                     altService.getServiceName(),
                     alternative.getAlternativePlan().getPlanName(),
-                    alternative.getSavings());
+                    alternative.getNetSavings());
         } else {
-            message = String.format("%s을(를) %s(%s)로 변경하면 월 %,d원 절약할 수 있습니다.",
+            message = String.format("%s을(를) %s(%s)로 변경하면 전환비용 반영 후 월 순절감 %,d원 예상됩니다.",
                     alternative.getCurrentSubscription().getService().getServiceName(),
                     altService.getServiceName(),
                     alternative.getAlternativePlan().getPlanName(),
-                    alternative.getSavings());
+                    alternative.getNetSavings());
         }
 
         return CheaperAlternativeResponse.builder()
@@ -57,6 +63,10 @@ public class CheaperAlternativeResponse {
                 .savings(alternative.getSavings())
                 .isSameService(sameService)
                 .suggestionType(sameService ? "DOWNGRADE" : "SWITCH")
+                .switchCost(alternative.getSwitchCost())
+                .netSavings(alternative.getNetSavings())
+                .confidence(alternative.getConfidenceScore())
+                .reasonCodes(alternative.getReasonCodes())
                 .message(message)
                 .build();
     }

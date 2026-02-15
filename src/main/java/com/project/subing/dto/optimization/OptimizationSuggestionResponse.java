@@ -15,6 +15,7 @@ public class OptimizationSuggestionResponse {
 
     private List<DuplicateServiceGroupResponse> duplicateServices;
     private List<CheaperAlternativeResponse> cheaperAlternatives;
+    private List<CheaperAlternativeResponse> optimizedAlternatives;
     private Integer totalPotentialSavings;
     private String summary;
 }

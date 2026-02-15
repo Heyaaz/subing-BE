@@ -3,7 +3,9 @@ package com.project.subing.controller;
 import com.project.subing.dto.common.ApiResponse;
 import com.project.subing.dto.optimization.CheaperAlternativeResponse;
 import com.project.subing.dto.optimization.DuplicateServiceGroupResponse;
+import com.project.subing.dto.optimization.OptimizationEventRequest;
 import com.project.subing.dto.optimization.OptimizationSuggestionResponse;
+import jakarta.validation.Valid;
 import com.project.subing.service.SubscriptionOptimizationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -38,22 +40,29 @@ public class OptimizationController {
                 .map(CheaperAlternativeResponse::from)
                 .collect(Collectors.toList());
 
-        // 구독별 최대 절약 금액만 합산 (과대 계산 방지)
-        int totalPotentialSavings = alternativeResponses.stream()
+        List<SubscriptionOptimizationService.CheaperAlternative> optimizedAlternatives =
+                optimizationService.selectPortfolioOptimizedAlternatives(alternatives);
+        List<CheaperAlternativeResponse> optimizedAlternativeResponses = optimizedAlternatives.stream()
+                .map(CheaperAlternativeResponse::from)
+                .collect(Collectors.toList());
+
+        // 전역 최적화 결과 기준 총 잠재 절약 금액
+        int totalPotentialSavings = optimizedAlternativeResponses.stream()
                 .collect(Collectors.groupingBy(
                         alt -> alt.getCurrentSubscription().getId(),
-                        Collectors.maxBy(Comparator.comparingInt(CheaperAlternativeResponse::getSavings))
+                        Collectors.maxBy(Comparator.comparingInt(CheaperAlternativeResponse::getNetSavings))
                 ))
                 .values().stream()
                 .filter(Optional::isPresent)
-                .mapToInt(opt -> opt.get().getSavings())
+                .mapToInt(opt -> opt.get().getNetSavings())
                 .sum();
 
-        String summary = generateSummary(duplicateResponses.size(), alternativeResponses.size(), totalPotentialSavings);
+        String summary = generateSummary(duplicateResponses.size(), optimizedAlternativeResponses.size(), totalPotentialSavings);
 
         OptimizationSuggestionResponse response = OptimizationSuggestionResponse.builder()
                 .duplicateServices(duplicateResponses)
                 .cheaperAlternatives(alternativeResponses)
+                .optimizedAlternatives(optimizedAlternativeResponses)
                 .totalPotentialSavings(totalPotentialSavings)
                 .summary(summary)
                 .build();
@@ -87,6 +96,14 @@ public class OptimizationController {
         return ResponseEntity.ok(ApiResponse.success(responses, "저렴한 대안을 조회했습니다."));
     }
 
+    @PostMapping("/events")
+    public ResponseEntity<ApiResponse<Void>> trackOptimizationEvent(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody OptimizationEventRequest request) {
+        optimizationService.trackOptimizationEvent(userId, request);
+        return ResponseEntity.ok(ApiResponse.success(null, "최적화 이벤트가 기록되었습니다."));
+    }
+
     private String generateSummary(int duplicateCount, int alternativeCount, int totalSavings) {
         if (duplicateCount == 0 && alternativeCount == 0) {
             return "현재 구독이 최적화되어 있습니다!";
@@ -99,7 +116,7 @@ public class OptimizationController {
         }
 
         if (alternativeCount > 0) {
-            summary.append(String.format("%d개의 저렴한 대안이 있으며, 최적 선택 시 월 최대 %,d원을 절약할 수 있습니다.",
+            summary.append(String.format("%d개의 저렴한 대안이 있으며, 최적 선택 시 월 최대 순절감 %,d원이 예상됩니다.",
                     alternativeCount, totalSavings));
         }
 

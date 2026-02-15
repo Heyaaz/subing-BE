@@ -94,6 +94,7 @@ public class OptimizationControllerTest {
         JsonNode data = body.path("data");
         assertThat(data.path("duplicateServices")).isEmpty();
         assertThat(data.path("cheaperAlternatives")).isEmpty();
+        assertThat(data.path("optimizedAlternatives")).isEmpty();
         assertThat(data.path("totalPotentialSavings").asInt()).isZero();
     }
 
@@ -201,6 +202,9 @@ public class OptimizationControllerTest {
         // 첫 번째: 동일 서비스 다운그레이드 (isSameService=true)
         assertThat(alternatives.get(0).path("isSameService").asBoolean()).isTrue();
         assertThat(alternatives.get(0).path("suggestionType").asText()).isEqualTo("DOWNGRADE");
+        assertThat(alternatives.get(0).path("netSavings").asInt()).isGreaterThan(0);
+        assertThat(alternatives.get(0).path("confidence").asInt()).isBetween(0, 100);
+        assertThat(alternatives.get(0).path("reasonCodes").isArray()).isTrue();
 
         // 마지막: 타 서비스 대안 (isSameService=false)
         boolean hasSwitch = false;
@@ -208,6 +212,7 @@ public class OptimizationControllerTest {
             if (!alternatives.get(i).path("isSameService").asBoolean()) {
                 hasSwitch = true;
                 assertThat(alternatives.get(i).path("suggestionType").asText()).isEqualTo("SWITCH");
+                assertThat(alternatives.get(i).path("switchCost").asInt()).isGreaterThan(0);
                 break;
             }
         }
@@ -290,5 +295,157 @@ public class OptimizationControllerTest {
         JsonNode data = objectMapper.readTree(response.getBody()).path("data");
         assertThat(data.path("duplicateServices")).isEmpty();
         assertThat(data.path("cheaperAlternatives")).isEmpty();
+    }
+
+    @Test
+    void 연간결제_구독은_월환산_기준으로_대안을_계산() throws Exception {
+        // given - 연 120,000원 구독(월환산 10,000원), 동일 서비스 대안 9,000원
+        ServiceEntity cloudService = serviceRepository.save(ServiceEntity.builder()
+                .serviceName("Cloud-yearly-" + System.nanoTime())
+                .category(ServiceCategory.CLOUD)
+                .description("클라우드 스토리지")
+                .officialUrl("https://cloud.example.com")
+                .iconUrl("icon.png")
+                .build());
+
+        subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                .service(cloudService)
+                .planName("라이트")
+                .monthlyPrice(9000)
+                .description("기본 플랜")
+                .build());
+
+        User user = userRepository.findById(testUserId).orElseThrow();
+        userSubscriptionRepository.save(UserSubscription.builder()
+                .user(user).service(cloudService)
+                .planName("연간 플랜").monthlyPrice(120000)
+                .billingDate(1).billingCycle(BillingCycle.YEARLY)
+                .isActive(true).build());
+
+        // when
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl + "/suggestions",
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders()),
+                String.class
+        );
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode alternatives = objectMapper.readTree(response.getBody())
+                .path("data")
+                .path("cheaperAlternatives");
+
+        JsonNode normalizedAlt = null;
+        for (int i = 0; i < alternatives.size(); i++) {
+            JsonNode candidate = alternatives.get(i);
+            if (candidate.path("alternativeServiceId").asLong() == cloudService.getId()
+                    && candidate.path("alternativePlan").path("planName").asText().equals("라이트")) {
+                normalizedAlt = candidate;
+                break;
+            }
+        }
+
+        assertThat(normalizedAlt).as("연간 결제 월환산 대안").isNotNull();
+        assertThat(normalizedAlt.path("currentPrice").asInt()).isEqualTo(10000);
+        assertThat(normalizedAlt.path("alternativePrice").asInt()).isEqualTo(9000);
+        assertThat(normalizedAlt.path("savings").asInt()).isEqualTo(1000);
+        assertThat(normalizedAlt.path("netSavings").asInt()).isEqualTo(1000);
+    }
+
+    @Test
+    void 전역최적화_MVP는_최대_변경건수_제약을_적용한다() throws Exception {
+        // given - 4개 활성 구독 각각에 저렴한 대안 1개씩 제공 (기본 maxChangesPerRun=3)
+        User user = userRepository.findById(testUserId).orElseThrow();
+
+        for (int i = 0; i < 4; i++) {
+            ServiceEntity service = serviceRepository.save(ServiceEntity.builder()
+                    .serviceName("Global-opt-" + i + "-" + System.nanoTime())
+                    .category(ServiceCategory.OTT)
+                    .description("스트리밍")
+                    .officialUrl("https://example.com/" + i)
+                    .iconUrl("icon.png")
+                    .build());
+
+            subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                    .service(service)
+                    .planName("가성비 플랜")
+                    .monthlyPrice(5000 + (i * 100))
+                    .description("할인 플랜")
+                    .build());
+
+            userSubscriptionRepository.save(UserSubscription.builder()
+                    .user(user).service(service)
+                    .planName("프리미엄")
+                    .monthlyPrice(15000 + (i * 100))
+                    .billingDate(10).billingCycle(BillingCycle.MONTHLY)
+                    .isActive(true).build());
+        }
+
+        // when
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl + "/suggestions",
+                HttpMethod.GET,
+                new HttpEntity<>(authHeaders()),
+                String.class
+        );
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = objectMapper.readTree(response.getBody()).path("data");
+        JsonNode optimizedAlternatives = data.path("optimizedAlternatives");
+
+        assertThat(optimizedAlternatives.isArray()).isTrue();
+        assertThat(optimizedAlternatives.size()).isEqualTo(3);
+    }
+
+    @Test
+    void 최적화_이벤트_기록_성공() {
+        HttpHeaders headers = authHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        String eventRequestJson = """
+                {
+                  "eventType": "IMPRESSION",
+                  "currentSubscriptionId": 1,
+                  "alternativeServiceId": 2,
+                  "suggestionType": "DOWNGRADE",
+                  "source": "OPTIMIZATION_PAGE",
+                  "metadata": {
+                    "confidence": 85
+                  }
+                }
+                """;
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl + "/events",
+                HttpMethod.POST,
+                new HttpEntity<>(eventRequestJson, headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void 최적화_이벤트_타입이_유효하지_않으면_400() {
+        HttpHeaders headers = authHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        String eventRequestJson = """
+                {
+                  "eventType": "UNKNOWN_EVENT",
+                  "source": "OPTIMIZATION_PAGE"
+                }
+                """;
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                baseUrl + "/events",
+                HttpMethod.POST,
+                new HttpEntity<>(eventRequestJson, headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }
