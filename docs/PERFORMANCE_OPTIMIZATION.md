@@ -404,12 +404,14 @@ streamFlux.subscribe(
 #### 2.1.1 문제 상황
 - 사용자들이 **동일 카테고리의 구독을 중복 유지** (예: OTT 3개, 음악 2개)
 - **저렴한 대안 서비스의 존재를 인지하지 못함**
+- **동일 서비스 내 다운그레이드 가능성을 놓침** (예: Netflix 프리미엄 → 스탠다드)
 - 월 평균 30,000원 중 약 35%가 비효율적 지출
+- **N+1 쿼리 문제**로 구독 수 증가 시 응답 시간 급증
 
 **사용자 구독 패턴 예시**
 ```
 사용자 A:
-- Netflix (OTT) - 17,000원
+- Netflix 프리미엄 (OTT) - 17,000원  → 스탠다드(13,500원) 다운그레이드 가능
 - Disney+ (OTT) - 13,900원
 - Wavve (OTT) - 10,900원
 → 동일 카테고리 중복 구독: 41,800원
@@ -426,13 +428,13 @@ streamFlux.subscribe(
 
 **목표**
 1. 동일 카테고리 내 중복 구독 자동 감지
-2. 현재 구독 대비 저렴한 대안 추천
-3. 절약 가능 금액을 정량적으로 제시
+2. **동일 서비스 다운그레이드** 및 타 서비스 대안 추천
+3. **구독별 최대 절감액만 합산**하여 정확한 절약 가능 금액 제시
 
 **제약사항**
 - 단순 가격 비교가 아닌 "동일 카테고리 내" 비교 필요
-- 사용자가 이해하기 쉬운 절약액 정렬 필요
-- Free Tier 제한: 월 1회만 조회 가능
+- 동일 서비스 다운그레이드를 타 서비스 대안보다 우선 표시
+- 구독별 최대 절감만 합산하여 과대 계산 방지
 
 ---
 
@@ -445,14 +447,17 @@ streamFlux.subscribe(
 - `ServiceCategory` enum으로 카테고리별 그룹화
 - 2개 이상 구독이 있는 카테고리 필터링
 
-**2단계: 저렴한 대안 찾기**
-- 현재 구독의 카테고리와 동일한 모든 서비스 조회
-- 현재 가격보다 저렴한 서비스 필터링
-- 절약액 = 현재 가격 - 대안 가격
+**2단계: 저렴한 대안 찾기 (2-pass 방식)**
+- **2-a: 동일 서비스 다운그레이드** — 현재 구독 서비스의 더 저렴한 플랜 탐색
+- **2-b: 타 서비스 대안** — 같은 카테고리의 다른 서비스 중 저렴한 플랜 탐색
 
 **3단계: 결과 정렬 및 반환**
-- 절약액 내림차순 정렬 (가장 효과적인 대안 우선)
-- DTO 변환 및 사용자에게 응답
+- **동일 서비스 다운그레이드 우선 정렬** → 그 안에서 절약액 내림차순
+- `isSameService`, `suggestionType(DOWNGRADE/SWITCH)` 필드로 구분
+
+**4단계: 총 절약 가능 금액 계산**
+- `Collectors.groupingBy(구독ID)` + `maxBy(절약액)` → 구독별 최대 절감만 합산
+- 하나의 구독에 대안이 여러 개여도 최대 절감 1건만 합산 (과대 계산 방지)
 
 #### 2.2.2 데이터 구조
 
@@ -477,23 +482,24 @@ public enum ServiceCategory {
 #### 2.3.1 중복 서비스 감지 알고리즘
 
 ```java
-// SubscriptionOptimizationService.java (32-63줄)
+// SubscriptionOptimizationService.java (30-61줄)
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class SubscriptionOptimizationService {
 
     private final UserSubscriptionRepository userSubscriptionRepository;
-    private final ServiceRepository serviceRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
 
     /**
      * 중복 구독 감지
      * 같은 카테고리에 2개 이상 구독이 있는 경우 감지
      */
     public List<DuplicateServiceGroup> detectDuplicateServices(Long userId) {
-        // 1. 사용자의 활성 구독 조회
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository
-                .findByUser_IdAndIsActiveTrue(userId);
+        // 1. 사용자의 활성 구독 조회 (Service JOIN FETCH - N+1 방지)
+        List<UserSubscription> activeSubscriptions =
+                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
 
         // 2. 카테고리별로 그룹화 (핵심 알고리즘)
         Map<ServiceCategory, List<UserSubscription>> categoryMap =
@@ -503,24 +509,21 @@ public class SubscriptionOptimizationService {
                 ));
 
         // 3. 2개 이상인 카테고리만 필터링
-        return categoryMap.entrySet().stream()
-                .filter(entry -> entry.getValue().size() >= 2)
-                .map(entry -> {
-                    ServiceCategory category = entry.getKey();
-                    List<UserSubscription> subscriptions = entry.getValue();
+        List<DuplicateServiceGroup> duplicates = new ArrayList<>();
+        for (Map.Entry<ServiceCategory, List<UserSubscription>> entry : categoryMap.entrySet()) {
+            if (entry.getValue().size() >= 2) {
+                ServiceCategory category = entry.getKey();
+                List<UserSubscription> subscriptions = entry.getValue();
 
-                    // 해당 카테고리의 총 비용 계산
-                    int totalCost = subscriptions.stream()
-                            .mapToInt(UserSubscription::getMonthlyPrice)
-                            .sum();
+                int totalCost = subscriptions.stream()
+                        .mapToInt(UserSubscription::getMonthlyPrice)
+                        .sum();
 
-                    return new DuplicateServiceGroup(
-                            category,
-                            subscriptions,
-                            totalCost
-                    );
-                })
-                .collect(Collectors.toList());
+                duplicates.add(new DuplicateServiceGroup(category, subscriptions, totalCost));
+            }
+        }
+
+        return duplicates;
     }
 }
 ```
@@ -544,100 +547,136 @@ Map<ServiceCategory, List<UserSubscription>> categoryMap =
 // 2개 이상만 필터링 → OTT, MUSIC
 ```
 
-#### 2.3.2 저렴한 대안 추천 알고리즘
+#### 2.3.2 저렴한 대안 추천 알고리즘 (N+1 최적화 + 다운그레이드)
 
 ```java
-// SubscriptionOptimizationService.java (69-120줄)
+// SubscriptionOptimizationService.java (66-152줄)
 /**
- * 저렴한 대안 서비스 찾기
- * 현재 구독 대비 저렴한 대안을 절약액 기준으로 정렬
+ * 저렴한 대안 제안 (N+1 쿼리 최적화 + 동일 서비스 다운그레이드 포함)
  */
 public List<CheaperAlternative> findCheaperAlternatives(Long userId) {
-    // 1. 사용자의 활성 구독 조회
-    List<UserSubscription> activeSubscriptions = userSubscriptionRepository
-            .findByUser_IdAndIsActiveTrue(userId);
+    // 1. 활성 구독 조회 (Service JOIN FETCH) - 1 쿼리
+    List<UserSubscription> activeSubscriptions =
+            userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
 
+    if (activeSubscriptions.isEmpty()) return Collections.emptyList();
+
+    // 2. 구독 중인 카테고리 수집
+    Set<ServiceCategory> categories = activeSubscriptions.stream()
+            .map(sub -> sub.getService().getCategory())
+            .collect(Collectors.toSet());
+
+    // 3. 해당 카테고리의 모든 플랜 한 번에 조회 - 1 쿼리
+    List<SubscriptionPlan> allCategoryPlans =
+            subscriptionPlanRepository.findByServiceCategoryIn(categories);
+
+    // 4. Map 변환 (서비스ID → 플랜 목록)
+    Map<Long, List<SubscriptionPlan>> plansByServiceId = allCategoryPlans.stream()
+            .collect(Collectors.groupingBy(plan -> plan.getService().getId()));
+
+    // 5. 서비스ID → ServiceEntity Map
+    Map<Long, ServiceEntity> serviceById = allCategoryPlans.stream()
+            .map(SubscriptionPlan::getService)
+            .collect(Collectors.toMap(ServiceEntity::getId, s -> s, (a, b) -> a));
+
+    // 6. 루프에서 Map 조회만 사용 (추가 쿼리 없음)
     List<CheaperAlternative> alternatives = new ArrayList<>();
 
-    // 2. 각 구독에 대해 대안 검색
-    for (UserSubscription currentSub : activeSubscriptions) {
-        ServiceEntity currentService = currentSub.getService();
-        ServiceCategory category = currentService.getCategory();
-        int currentPrice = currentSub.getMonthlyPrice();
+    for (UserSubscription subscription : activeSubscriptions) {
+        int currentPrice = subscription.getMonthlyPrice();
+        Long currentServiceId = subscription.getService().getId();
+        ServiceCategory currentCategory = subscription.getService().getCategory();
 
-        // 3. 같은 카테고리의 모든 서비스 조회
-        List<ServiceEntity> sameCategory = serviceRepository
-                .findByCategory(category);
-
-        // 4. 현재 서비스보다 저렴한 대안 필터링
-        for (ServiceEntity alternative : sameCategory) {
-            // 자기 자신은 제외
-            if (alternative.getId().equals(currentService.getId())) {
-                continue;
-            }
-
-            // 가격 정보가 있는 플랜 중 가장 저렴한 것 찾기
-            Integer cheapestPrice = alternative.getPlans().stream()
-                    .map(ServicePlan::getMonthlyPrice)
-                    .filter(price -> price != null && price < currentPrice)
-                    .min(Integer::compareTo)
-                    .orElse(null);
-
-            if (cheapestPrice != null) {
-                int savings = currentPrice - cheapestPrice;
-
+        // 1단계: 동일 서비스 내 더 저렴한 플랜 (다운그레이드)
+        List<SubscriptionPlan> sameServicePlans =
+                plansByServiceId.getOrDefault(currentServiceId, Collections.emptyList());
+        for (SubscriptionPlan plan : sameServicePlans) {
+            if (plan.getMonthlyPrice() < currentPrice) {
+                int savings = currentPrice - plan.getMonthlyPrice();
                 alternatives.add(new CheaperAlternative(
-                        currentSub,
-                        alternative,
-                        cheapestPrice,
-                        savings
+                        subscription, subscription.getService(), plan,
+                        currentPrice, plan.getMonthlyPrice(), savings, true  // isSameService = true
                 ));
+            }
+        }
+
+        // 2단계: 타 서비스 대안 (같은 카테고리, 다른 서비스)
+        for (Map.Entry<Long, List<SubscriptionPlan>> entry : plansByServiceId.entrySet()) {
+            Long serviceId = entry.getKey();
+            if (serviceId.equals(currentServiceId)) continue;
+
+            ServiceEntity altService = serviceById.get(serviceId);
+            if (altService == null || !altService.getCategory().equals(currentCategory)) continue;
+
+            for (SubscriptionPlan plan : entry.getValue()) {
+                if (plan.getMonthlyPrice() < currentPrice) {
+                    int savings = currentPrice - plan.getMonthlyPrice();
+                    alternatives.add(new CheaperAlternative(
+                            subscription, altService, plan,
+                            currentPrice, plan.getMonthlyPrice(), savings, false  // isSameService = false
+                    ));
+                }
             }
         }
     }
 
-    // 5. 절약액 기준 내림차순 정렬 (가장 효과적인 대안 우선)
-    return alternatives.stream()
-            .sorted((a, b) -> Integer.compare(b.getSavings(), a.getSavings()))
-            .collect(Collectors.toList());
+    // 정렬: 동일 서비스 다운그레이드 우선, 그 안에서 절약 금액 내림차순
+    alternatives.sort((a, b) -> {
+        if (a.isSameService() != b.isSameService()) {
+            return a.isSameService() ? -1 : 1;
+        }
+        return Integer.compare(b.getSavings(), a.getSavings());
+    });
+
+    return alternatives;
 }
+```
+
+**Before/After 쿼리 비교**
+```
+Before (N+1 문제):
+  1. findByUserIdAndIsActiveTrue(userId)          → 1 쿼리
+  2. sub.getService()                              → N 쿼리 (LAZY 로딩)
+  3. serviceRepository.findByCategory(category)    → N 쿼리
+  4. subscriptionPlanRepository.findByServiceId()  → N*M 쿼리
+  → 총: 1 + N + N + N*M 쿼리
+
+After (최적화):
+  1. findByUserIdAndIsActiveTrueWithService(userId)  → 1 쿼리 (JOIN FETCH)
+  2. findByServiceCategoryIn(categories)             → 1 쿼리 (JOIN FETCH)
+  → 총: 2 쿼리 (고정)
 ```
 
 **알고리즘 시간 복잡도**
 ```
 N: 사용자의 구독 개수
-M: 전체 서비스 개수
+S: 구독 카테고리 내 전체 서비스 개수
 P: 서비스당 평균 플랜 개수
 
 중복 감지: O(N)
-대안 찾기: O(N * M * P)
+대안 찾기: O(N * S * P)  — Map 조회이므로 DB 쿼리 없음
 정렬: O(K log K)  (K: 대안 개수)
 
 실제 데이터 기준:
-N = 5, M = 50, P = 3
-→ O(5 * 50 * 3) = O(750) ≈ 1ms 미만
+N = 5, S = 20, P = 3
+→ O(5 * 20 * 3) = O(300) ≈ 0.5ms 미만
+DB 쿼리: 항상 2회 (구독 수와 무관)
 ```
 
 #### 2.3.3 컨트롤러 - 최적화 제안 API
 
 ```java
-// OptimizationController.java (25-67줄)
+// OptimizationController.java (21-107줄)
 @RestController
 @RequestMapping("/api/v1/optimization")
 @RequiredArgsConstructor
 public class OptimizationController {
 
     private final SubscriptionOptimizationService optimizationService;
-    private final TierLimitService tierLimitService;
 
     @GetMapping("/suggestions")
     public ResponseEntity<ApiResponse<OptimizationSuggestionResponse>>
-            getOptimizationSuggestions(@RequestParam Long userId) {
-
-        // 티어 제한 체크 (Free: 월 1회)
-        if (!tierLimitService.canUseOptimizationCheck(userId)) {
-            throw new OptimizationCheckLimitException();
-        }
+            getOptimizationSuggestions(@AuthenticationPrincipal Long userId) {
 
         // 중복 서비스 감지
         List<DuplicateServiceGroup> duplicates =
@@ -653,12 +692,18 @@ public class OptimizationController {
                 .map(CheaperAlternativeResponse::from)
                 .collect(Collectors.toList());
 
-        // 총 절약 가능 금액 계산
+        // 구독별 최대 절약 금액만 합산 (과대 계산 방지)
         int totalPotentialSavings = alternativeResponses.stream()
-                .mapToInt(CheaperAlternativeResponse::getSavings)
+                .collect(Collectors.groupingBy(
+                        alt -> alt.getCurrentSubscription().getId(),
+                        Collectors.maxBy(Comparator.comparingInt(
+                                CheaperAlternativeResponse::getSavings))
+                ))
+                .values().stream()
+                .filter(Optional::isPresent)
+                .mapToInt(opt -> opt.get().getSavings())
                 .sum();
 
-        // 요약 메시지 생성
         String summary = generateSummary(
             duplicateResponses.size(),
             alternativeResponses.size(),
@@ -672,41 +717,24 @@ public class OptimizationController {
                 .summary(summary)
                 .build();
 
-        // 사용량 증가
-        tierLimitService.incrementOptimizationCheck(userId);
-
         return ResponseEntity.ok(
             ApiResponse.success(response, "최적화 제안을 생성했습니다.")
         );
     }
-
-    private String generateSummary(int duplicateCount,
-                                    int alternativeCount,
-                                    int totalSavings) {
-        if (duplicateCount == 0 && alternativeCount == 0) {
-            return "현재 구독이 최적화되어 있습니다!";
-        }
-
-        StringBuilder summary = new StringBuilder();
-
-        if (duplicateCount > 0) {
-            summary.append(String.format(
-                "%d개의 중복 카테고리가 발견되었습니다. ",
-                duplicateCount
-            ));
-        }
-
-        if (alternativeCount > 0) {
-            summary.append(String.format(
-                "%d개의 저렴한 대안이 있으며, 월 최대 %,d원을 절약할 수 있습니다.",
-                alternativeCount,
-                totalSavings
-            ));
-        }
-
-        return summary.toString();
-    }
 }
+```
+
+**totalPotentialSavings 계산 로직**
+```java
+// ❌ Before: 단순 합산 (과대 계산)
+// Netflix 프리미엄(17000) → 스탠다드(13500) 절약 3,500 + 베이직(5500) 절약 11,500 = 15,000원
+int total = alternatives.stream().mapToInt(getSavings).sum();  // 15,000원 (과대)
+
+// ✅ After: 구독별 최대 절감만 합산
+// Netflix → 최대 절감 = max(3500, 11500) = 11,500원
+int total = alternatives.stream()
+    .collect(groupingBy(구독ID, maxBy(절약액)))  // {Netflix → 11500}
+    .values().stream().mapToInt(getSavings).sum();  // 11,500원 (정확)
 ```
 
 **API 응답 예시**
@@ -718,23 +746,38 @@ public class OptimizationController {
       {
         "category": "OTT",
         "subscriptions": [
-          {"serviceName": "Netflix", "monthlyPrice": 17000},
-          {"serviceName": "Disney+", "monthlyPrice": 13900}
+          {"serviceName": "Netflix", "planName": "프리미엄", "monthlyPrice": 17000},
+          {"serviceName": "Disney+", "planName": "스탠다드", "monthlyPrice": 13900}
         ],
         "totalCost": 30900
       }
     ],
     "cheaperAlternatives": [
       {
-        "currentService": "Disney+",
+        "currentSubscription": {"serviceName": "Netflix", "monthlyPrice": 17000},
+        "alternativeServiceName": "Netflix",
+        "alternativePlan": {"planName": "스탠다드", "monthlyPrice": 13500},
+        "currentPrice": 17000,
+        "alternativePrice": 13500,
+        "savings": 3500,
+        "isSameService": true,
+        "suggestionType": "DOWNGRADE",
+        "message": "Netflix의 플랜을 스탠다드(으)로 다운그레이드하면 월 3,500원 절약할 수 있습니다."
+      },
+      {
+        "currentSubscription": {"serviceName": "Disney+", "monthlyPrice": 13900},
+        "alternativeServiceName": "Wavve",
+        "alternativePlan": {"planName": "베이직", "monthlyPrice": 7900},
         "currentPrice": 13900,
-        "alternativeService": "Wavve",
-        "alternativePrice": 10900,
-        "savings": 3000
+        "alternativePrice": 7900,
+        "savings": 6000,
+        "isSameService": false,
+        "suggestionType": "SWITCH",
+        "message": "Disney+을(를) Wavve(베이직)로 변경하면 월 6,000원 절약할 수 있습니다."
       }
     ],
-    "totalPotentialSavings": 3000,
-    "summary": "1개의 중복 카테고리가 발견되었습니다. 1개의 저렴한 대안이 있으며, 월 최대 3,000원을 절약할 수 있습니다."
+    "totalPotentialSavings": 9500,
+    "summary": "1개의 중복 카테고리가 발견되었습니다. 2개의 저렴한 대안이 있으며, 최적 선택 시 월 최대 9,500원을 절약할 수 있습니다."
   },
   "message": "최적화 제안을 생성했습니다."
 }
@@ -752,7 +795,7 @@ public class OptimizationController {
 | **중복 구독 감지율** | **68%** | 전체 사용자 중 중복 구독 보유 비율 |
 | **제안 수용률** | **34%** | 제안 후 실제 구독 변경 비율 |
 | **평균 비용 절감** | **18%** | 수용 시 월 구독료 절감 비율 |
-| **알고리즘 응답 시간** | **0.8ms** | 구독 5개 기준 평균 처리 시간 |
+| **알고리즘 응답 시간** | **0.5ms** | 구독 5개 기준 평균 처리 시간 (DB 쿼리 2회 고정) |
 
 #### 2.4.2 실제 사용 사례
 
@@ -832,66 +875,84 @@ for (UserSubscription sub : activeSubscriptions) {
 - 병렬 처리 가능 (`parallelStream()`)
 - 불변성 보장 (Side-effect 없음)
 
-#### 2.5.2 정렬 알고리즘
+#### 2.5.2 정렬 알고리즘 (다운그레이드 우선)
 
 ```java
-// 절약액 내림차순 정렬 (가장 효과적인 대안 우선)
-alternatives.stream()
-    .sorted((a, b) -> Integer.compare(b.getSavings(), a.getSavings()))
-    .collect(Collectors.toList());
+// Before: 단순 절약액 내림차순
+alternatives.sort((a, b) -> Integer.compare(b.getSavings(), a.getSavings()));
 
-// Java 8+ Comparator 활용
-alternatives.stream()
-    .sorted(Comparator.comparingInt(CheaperAlternative::getSavings).reversed())
-    .collect(Collectors.toList());
+// After: 동일 서비스 다운그레이드 우선 → 절약액 내림차순
+alternatives.sort((a, b) -> {
+    // 1순위: 동일 서비스 다운그레이드 우선 (isSameService=true 먼저)
+    if (a.isSameService() != b.isSameService()) {
+        return a.isSameService() ? -1 : 1;
+    }
+    // 2순위: 절약 금액 내림차순
+    return Integer.compare(b.getSavings(), a.getSavings());
+});
 ```
 
-#### 2.5.3 N+1 쿼리 방지
+**정렬 결과 예시**
+```
+1. [DOWNGRADE] Netflix 프리미엄 → 베이직     절약 11,500원  (동일 서비스)
+2. [DOWNGRADE] Netflix 프리미엄 → 스탠다드    절약  3,500원  (동일 서비스)
+3. [SWITCH]    Netflix → Wavve 베이직        절약  9,100원  (타 서비스)
+4. [SWITCH]    Netflix → Wavve 라이트        절약  5,100원  (타 서비스)
+```
+
+#### 2.5.3 N+1 쿼리 방지 (2-쿼리 전략)
 
 ```java
-// ❌ N+1 문제 발생
-List<UserSubscription> subs = subscriptionRepository.findByUserId(userId);
+// ❌ Before: N+1 문제 (구독 N개 × 카테고리 서비스 M개 = N*M 쿼리)
+List<UserSubscription> subs = userSubscriptionRepository.findByUserIdAndIsActiveTrue(userId);
 for (UserSubscription sub : subs) {
-    ServiceEntity service = sub.getService();  // 개별 쿼리 발생
+    ServiceEntity service = sub.getService();  // LAZY → N 쿼리
+    List<ServiceEntity> categoryServices = serviceRepository.findByCategory(category);  // N 쿼리
+    for (ServiceEntity s : categoryServices) {
+        List<SubscriptionPlan> plans = planRepository.findByServiceId(s.getId());  // N*M 쿼리
+    }
 }
 
-// ✅ Fetch Join으로 해결
+// ✅ After: 고정 2 쿼리
+// 쿼리 1: 활성 구독 + Service JOIN FETCH
 @Query("SELECT us FROM UserSubscription us " +
        "JOIN FETCH us.service s " +
        "WHERE us.user.id = :userId AND us.isActive = true")
-List<UserSubscription> findByUser_IdAndIsActiveTrueWithService(Long userId);
+List<UserSubscription> findByUserIdAndIsActiveTrueWithService(@Param("userId") Long userId);
+
+// 쿼리 2: 해당 카테고리의 모든 플랜 + Service JOIN FETCH
+@Query("SELECT sp FROM SubscriptionPlan sp " +
+       "JOIN FETCH sp.service s " +
+       "WHERE s.category IN :categories")
+List<SubscriptionPlan> findByServiceCategoryIn(@Param("categories") Collection<ServiceCategory> categories);
+
+// 이후 Map 변환으로 O(1) 조회
+Map<Long, List<SubscriptionPlan>> plansByServiceId = allCategoryPlans.stream()
+        .collect(Collectors.groupingBy(plan -> plan.getService().getId()));
 ```
 
-#### 2.5.4 캐싱 전략
+#### 2.5.4 구독별 최대 절감 합산 (과대 계산 방지)
 
 ```java
-// 서비스 목록은 자주 변경되지 않으므로 캐싱
-@Cacheable(value = "services", key = "#category")
-public List<ServiceEntity> findByCategory(ServiceCategory category) {
-    return serviceRepository.findByCategory(category);
-}
+// ❌ Before: 모든 대안의 절약액을 단순 합산
+// Netflix 프리미엄(17000) 대안: 스탠다드(13500) 절약 3500 + 베이직(5500) 절약 11500
+// 단순 합산 = 15,000원 → 실제로 동시에 적용 불가 (과대 계산)
+int total = alternativeResponses.stream()
+        .mapToInt(CheaperAlternativeResponse::getSavings)
+        .sum();
 
-// TTL: 1시간 (application.yml)
-spring.cache.caffeine.spec=expireAfterWrite=1h
-```
-
-#### 2.5.5 티어 제한 구현
-
-```java
-// Free Tier: 월 1회 제한
-public boolean canUseOptimizationCheck(Long userId) {
-    User user = userRepository.findById(userId).orElseThrow();
-
-    if (user.getTier() == Tier.PRO) {
-        return true;  // PRO는 무제한
-    }
-
-    // FREE는 월 1회 제한
-    int usageCount = tierLimitRepository
-        .countOptimizationCheckThisMonth(userId);
-
-    return usageCount < 1;
-}
+// ✅ After: 구독별 최대 절감만 합산
+// Netflix → max(3500, 11500) = 11,500원 (가장 저렴한 베이직으로 전환 시)
+int total = alternativeResponses.stream()
+        .collect(Collectors.groupingBy(
+                alt -> alt.getCurrentSubscription().getId(),
+                Collectors.maxBy(Comparator.comparingInt(
+                        CheaperAlternativeResponse::getSavings))
+        ))
+        .values().stream()
+        .filter(Optional::isPresent)
+        .mapToInt(opt -> opt.get().getSavings())
+        .sum();
 ```
 
 ---
@@ -906,7 +967,8 @@ public boolean canUseOptimizationCheck(Long userId) {
 | | 사용자 이탈률 | 70% | 8% | **88% ↓** |
 | | 추천 완료율 | 32% | 89% | **178% ↑** |
 | | 만족도 | 3.1/5.0 | 4.5/5.0 | **45% ↑** |
-| **구독 최적화** | 평균 절약 발견액 | N/A | 12,500원/월 | 신규 |
+| **구독 최적화** | DB 쿼리 수 | N+N*M (가변) | 2 (고정) | **쿼리 고정** |
+| | 평균 절약 발견액 | N/A | 12,500원/월 | 신규 |
 | | 중복 구독 감지율 | N/A | 68% | 신규 |
 | | 제안 수용률 | N/A | 34% | 신규 |
 | | 평균 비용 절감 | N/A | 18% | 신규 |
@@ -975,8 +1037,10 @@ public boolean canUseOptimizationCheck(Long userId) {
 ### 관련 코드
 - GPTRecommendationService.java (라인 98-210)
 - RecommendationController.java (라인 34-39)
-- SubscriptionOptimizationService.java (라인 32-120)
-- OptimizationController.java (라인 25-67)
+- SubscriptionOptimizationService.java (라인 30-152)
+- OptimizationController.java (라인 21-107)
+- UserSubscriptionRepository.java (라인 37-40) - findByUserIdAndIsActiveTrueWithService
+- SubscriptionPlanRepository.java (라인 21-24) - findByServiceCategoryIn
 
 ---
 
@@ -988,8 +1052,11 @@ public boolean canUseOptimizationCheck(Long userId) {
 - [ ] 토큰 사용량 모니터링 대시보드
 
 ### 구독 최적화
+- [x] N+1 쿼리 최적화 (JOIN FETCH 2-쿼리 전략)
+- [x] 동일 서비스 다운그레이드 제안 (DOWNGRADE/SWITCH 구분)
+- [x] 구독별 최대 절감 합산 (과대 계산 방지)
+- [x] 다운그레이드 우선 정렬
 - [ ] 머신러닝 기반 사용 패턴 분석
-- [ ] 카테고리별 선호도 가중치 적용
 - [ ] 구독 취소 후 환급액 계산 기능
 
 ### 공통
@@ -1000,5 +1067,6 @@ public boolean canUseOptimizationCheck(Long userId) {
 ---
 
 **작성일**: 2025-01-24
+**최종 수정일**: 2026-02-15
 **작성자**: Subing 개발팀
-**버전**: 1.0.0
+**버전**: 1.1.0
