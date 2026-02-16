@@ -43,10 +43,6 @@ logging:
     org.hibernate.SQL: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
-  file:
-    name: logs/subing.log
-    max-size: 100MB
-    max-history: 30
 
 # 서버 설정
 server:
