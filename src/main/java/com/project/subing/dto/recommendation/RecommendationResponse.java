@@ -1,5 +1,6 @@
 package com.project.subing.dto.recommendation;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,6 +12,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RecommendationResponse {
 
     private Long recommendationId;  // DB 저장 후 할당되는 ID (피드백 API 연동용)
