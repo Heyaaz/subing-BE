@@ -24,4 +24,4 @@ COPY --from=build /app/build/libs/*.jar app.jar
 ENV PORT=8080
 EXPOSE 8080
 
-ENTRYPOINT ["java","-Dspring.profiles.active=prod","-Xmx384m","-Xms192m","-XX:+UseSerialGC","-XX:MaxMetaspaceSize=96m","-Xss256k","-jar","app.jar"]
+ENTRYPOINT ["java","-Dspring.profiles.active=prod","-jar","app.jar"]
