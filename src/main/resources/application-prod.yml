@@ -14,7 +14,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate  # 운영: 검증만 (스키마 변경 금지)
+      ddl-auto: update  # 첫 배포 시 테이블 생성, 이후 validate로 변경
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
