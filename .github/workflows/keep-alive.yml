@@ -1,0 +1,24 @@
+name: Keep Supabase Active
+
+on:
+  schedule:
+    - cron: "0 0 * * 0" # 매주 일요일 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend login endpoint
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "BACKEND_URL secret is not set. Skipping."
+            exit 0
+          fi
+
+          curl -sf "$BACKEND_URL/api/v1/users/login" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"email":"keepalive@example.com","password":"invalid-password"}' || true
