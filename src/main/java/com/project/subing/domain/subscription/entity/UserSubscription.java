@@ -14,7 +14,11 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 
 @Entity
-@Table(name = "user_subscriptions")
+@Table(name = "user_subscriptions", indexes = {
+    @Index(name = "idx_us_user_id", columnList = "user_id"),
+    @Index(name = "idx_us_user_active", columnList = "user_id, is_active"),
+    @Index(name = "idx_us_active", columnList = "is_active")
+})
 @SQLDelete(sql = "UPDATE user_subscriptions SET del_yn = 'Y' WHERE id = ?")
 @SQLRestriction("del_yn = 'N'")
 @Getter
