@@ -13,11 +13,14 @@ import java.util.Optional;
 @Repository
 public interface UserSubscriptionRepository extends JpaRepository<UserSubscription, Long> {
 
-    List<UserSubscription> findByUserId(Long userId);
+    @Query("SELECT us FROM UserSubscription us JOIN FETCH us.service WHERE us.user.id = :userId")
+    List<UserSubscription> findByUserId(@Param("userId") Long userId);
 
-    List<UserSubscription> findByUserIdAndIsActive(Long userId, Boolean isActive);
+    @Query("SELECT us FROM UserSubscription us JOIN FETCH us.service WHERE us.user.id = :userId AND us.isActive = :isActive")
+    List<UserSubscription> findByUserIdAndIsActive(@Param("userId") Long userId, @Param("isActive") Boolean isActive);
 
-    List<UserSubscription> findByUserIdAndIsActiveTrue(Long userId);
+    @Query("SELECT us FROM UserSubscription us JOIN FETCH us.service WHERE us.user.id = :userId AND us.isActive = true")
+    List<UserSubscription> findByUserIdAndIsActiveTrue(@Param("userId") Long userId);
 
     Optional<UserSubscription> findByIdAndUserId(Long id, Long userId);
 
@@ -38,6 +41,10 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
            "JOIN FETCH us.service s " +
            "WHERE us.user.id = :userId AND us.isActive = true")
     List<UserSubscription> findByUserIdAndIsActiveTrueWithService(@Param("userId") Long userId);
+
+    // 스케줄러용: 활성 구독을 Service, User와 함께 조회
+    @Query("SELECT us FROM UserSubscription us JOIN FETCH us.service JOIN FETCH us.user WHERE us.isActive = true")
+    List<UserSubscription> findAllActiveWithServiceAndUser();
 
     // 관리자용: 모든 구독을 Service와 함께 조회 (LAZY 로딩 방지)
     @Query("SELECT DISTINCT us FROM UserSubscription us LEFT JOIN FETCH us.service")
