@@ -33,10 +33,7 @@ public class NotificationScheduler {
     public void checkPaymentDueNotifications() {
         log.info("결제일 알림 체크 시작");
 
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAll()
-                .stream()
-                .filter(UserSubscription::getIsActive)
-                .toList();
+        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAllActiveWithServiceAndUser();
 
         LocalDate today = LocalDate.now();
 
@@ -96,16 +93,11 @@ public class NotificationScheduler {
         int currentYear = today.getYear();
         int currentMonth = today.getMonthValue();
 
-        // 모든 현재 월 예산 조회
-        List<Budget> budgets = budgetRepository.findAll().stream()
-                .filter(budget -> budget.getYear().equals(currentYear) && budget.getMonth().equals(currentMonth))
-                .toList();
+        // 현재 월 예산만 조회 (User JOIN FETCH)
+        List<Budget> budgets = budgetRepository.findByYearAndMonthWithUser(currentYear, currentMonth);
 
-        // 모든 활성 구독 조회
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAll()
-                .stream()
-                .filter(UserSubscription::getIsActive)
-                .toList();
+        // 활성 구독만 조회 (Service, User JOIN FETCH)
+        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAllActiveWithServiceAndUser();
 
         // 사용자별 총 지출 계산
         Map<Long, Long> userExpenseMap = activeSubscriptions.stream()
@@ -156,9 +148,8 @@ public class NotificationScheduler {
         LocalDate thresholdDate = today.minusDays(90);
 
         // 90일 이상 지속된 활성 구독 조회
-        List<UserSubscription> longTermSubscriptions = userSubscriptionRepository.findAll()
+        List<UserSubscription> longTermSubscriptions = userSubscriptionRepository.findAllActiveWithServiceAndUser()
                 .stream()
-                .filter(UserSubscription::getIsActive)
                 .filter(subscription -> subscription.getCreatedAt().toLocalDate().isBefore(thresholdDate))
                 .toList();
 
@@ -194,10 +185,7 @@ public class NotificationScheduler {
     public void checkSubscriptionRenewalNotifications() {
         log.info("구독 갱신 알림 체크 시작");
 
-        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAll()
-                .stream()
-                .filter(UserSubscription::getIsActive)
-                .toList();
+        List<UserSubscription> activeSubscriptions = userSubscriptionRepository.findAllActiveWithServiceAndUser();
 
         LocalDate today = LocalDate.now();
         int todayDay = today.getDayOfMonth();

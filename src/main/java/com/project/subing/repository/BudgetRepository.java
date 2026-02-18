@@ -22,4 +22,8 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     List<Budget> findLatestOnOrBefore(@Param("userId") Long userId, @Param("year") Integer year, @Param("month") Integer month, Pageable pageable);
 
     boolean existsByUser_IdAndYearAndMonth(Long userId, Integer year, Integer month);
+
+    // 스케줄러용: 특정 년월 예산을 User와 함께 조회
+    @Query("SELECT b FROM Budget b JOIN FETCH b.user WHERE b.year = :year AND b.month = :month")
+    List<Budget> findByYearAndMonthWithUser(@Param("year") Integer year, @Param("month") Integer month);
 }
