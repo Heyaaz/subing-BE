@@ -8,11 +8,11 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 3
-      connection-timeout: 60000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 300000
+      max-lifetime: 900000
 
   jpa:
     hibernate:
@@ -22,6 +22,8 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
         show_sql: false  # 운영: SQL 출력 안함
+        query.plan_cache_max_size: 64
+        query.plan_parameter_metadata_max_size: 16
 
   ai:
     openai:
@@ -49,6 +51,12 @@ logging:
 # 서버 설정
 server:
   port: ${PORT:8080}
+  tomcat:
+    threads:
+      max: 20
+      min-spare: 2
+    max-connections: 100
+    accept-count: 10
   error:
     include-message: never  # 운영: 에러 메시지 숨김
     include-binding-errors: never

@@ -24,4 +24,16 @@ COPY --from=build /app/build/libs/*.jar app.jar
 ENV PORT=8080
 EXPOSE 8080
 
-ENTRYPOINT ["java","-Dspring.profiles.active=prod","-jar","app.jar"]
+# JVM 메모리 최적화 (Railway Hobby 플랜: 총 RSS ~450MB 목표)
+# Heap(350m) + Metaspace(100m) + CodeCache(48m) + Threads + Native ≈ 450MB
+ENV JAVA_OPTS="-Xms200m -Xmx350m \
+  -XX:MaxMetaspaceSize=100m \
+  -XX:+UseSerialGC \
+  -Xss256k \
+  -XX:ReservedCodeCacheSize=48m \
+  -XX:+UseCompressedOops \
+  -XX:+UseCompressedClassPointers \
+  -XX:CompressedClassSpaceSize=32m \
+  -XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dspring.profiles.active=prod -jar app.jar"]
