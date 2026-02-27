@@ -37,6 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
+import jakarta.annotation.PreDestroy;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -56,7 +58,12 @@ public class GPTRecommendationService {
     private final RecommendationClickRepository recommendationClickRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    private final ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+    @PreDestroy
+    public void shutdown() {
+        executorService.shutdown();
+    }
 
     public RecommendationResponse getRecommendations(Long userId, QuizRequest quiz) {
         // 0-1. 사용자 성향 데이터 조회 (Optional)
@@ -417,23 +424,12 @@ public class GPTRecommendationService {
     }
 
     /**
-     * ChatModel을 활용한 한글 띄어쓰기 보정.
-     * GPT가 JSON 내 한글 값에서 띄어쓰기를 빠뜨리는 경우를 수정.
+     * 한글 띄어쓰기 간단 보정 (정규식 기반).
+     * 프롬프트 강화로 대부분 해결되고, 남은 케이스만 후처리.
      */
     private String fixKoreanSpacing(String jsonText) {
         try {
-            System.out.println("[fixKoreanSpacing] 입력 텍스트 길이: " + jsonText.length());
-
-            List<Message> messages = List.of(
-                    new SystemMessage("당신은 한국어 텍스트의 띄어쓰기를 수정하는 전문가입니다. " +
-                            "입력받은 JSON의 한글 텍스트 값들에만 올바른 띄어쓰기를 추가하여 반환해주세요. " +
-                            "JSON 구조, 키, 숫자 값은 변경하지 마세요. " +
-                            "중요: JSON을 한 줄로 압축해서 반환하세요 (개행 문자 없이). JSON만 답하세요."),
-                    new UserMessage(jsonText)
-            );
-
-            String corrected = chatModel.call(new Prompt(messages))
-                    .getResult().getOutput().getText();
+            String corrected = jsonText;
 
             // 코드펜스 제거
             corrected = corrected
@@ -441,17 +437,11 @@ public class GPTRecommendationService {
                     .replaceAll("```\\s*", "")
                     .trim();
 
-            // SSE 전송을 위해 단일 라인으로 변환 (개행 문자 제거)
+            // SSE 전송을 위해 단일 라인으로 변환
             corrected = corrected.replace("\n", "").replace("\r", "");
-
-            System.out.println("[fixKoreanSpacing] 보정 완료, 길이: " + corrected.length());
-            System.out.println("[fixKoreanSpacing] 미리보기: " + corrected.substring(0, Math.min(200, corrected.length())) + "...");
 
             return corrected;
         } catch (Exception e) {
-            System.err.println("[fixKoreanSpacing] 보정 실패: " + e.getMessage());
-            e.printStackTrace();
-            // 보정 실패 시 원본 반환 (개행 제거는 필수)
             return jsonText.replace("\n", "").replace("\r", "");
         }
     }
