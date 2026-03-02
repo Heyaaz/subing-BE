@@ -17,6 +17,8 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
 
     List<SubscriptionPlan> findByServiceIdAndIsPopularTrue(Long serviceId);
 
+    List<SubscriptionPlan> findByServiceIdIn(List<Long> serviceIds);
+
     // 최적화 분석용: 해당 카테고리들의 모든 플랜을 Service와 함께 일괄 조회 (N+1 방지)
     @Query("SELECT sp FROM SubscriptionPlan sp " +
            "JOIN FETCH sp.service s " +

@@ -17,7 +17,6 @@ import com.project.subing.exception.entity.ServiceNotFoundException;
 import com.project.subing.exception.entity.UserNotFoundException;
 import com.project.subing.exception.external.GptApiException;
 import com.project.subing.exception.external.GptParsingException;
-import com.project.subing.exception.external.RecommendationSaveException;
 import com.project.subing.repository.RecommendationClickRepository;
 import com.project.subing.repository.RecommendationFeedbackRepository;
 import com.project.subing.repository.RecommendationResultRepository;
@@ -40,15 +39,21 @@ import reactor.core.publisher.Flux;
 
 import jakarta.annotation.PreDestroy;
 
+import reactor.core.Disposable;
+
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class GPTRecommendationService {
 
     private final ChatModel chatModel;
@@ -60,7 +65,16 @@ public class GPTRecommendationService {
     private final RecommendationClickRepository recommendationClickRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ExecutorService executorService = Executors.newFixedThreadPool(2);
+    // 바운디드 큐(4개) + CallerRunsPolicy로 메모리 보호
+    private final ExecutorService executorService = new ThreadPoolExecutor(
+            2, 2, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(4),
+            new ThreadPoolExecutor.CallerRunsPolicy()
+    );
+
+    private volatile List<ServiceEntity> cachedServiceList;
+    private volatile long serviceListCacheTime;
+    private static final long SERVICE_LIST_CACHE_TTL_MS = 600_000; // 10분
 
     @PreDestroy
     public void shutdown() {
@@ -108,8 +122,11 @@ public class GPTRecommendationService {
      * SSE를 통한 스트리밍 추천 (실시간 타이핑 효과)
      */
     public SseEmitter getRecommendationsStream(Long userId, QuizRequest quiz) {
-        // SSE Emitter 생성 (타임아웃 5분)
-        SseEmitter emitter = new SseEmitter(300000L);
+        // SSE Emitter 생성 (타임아웃 2분)
+        SseEmitter emitter = new SseEmitter(120_000L);
+
+        // Reactor 구독 추적 (클라이언트 연결 끊김 시 스트림 취소용)
+        AtomicReference<Disposable> disposableRef = new AtomicReference<>();
 
         // 비동기 처리
         executorService.execute(() -> {
@@ -146,8 +163,8 @@ public class GPTRecommendationService {
                 // 5. 전체 응답 누적용
                 StringBuilder fullResponse = new StringBuilder();
 
-                // 6. 각 청크를 SSE로 전송
-                streamFlux.subscribe(
+                // 6. 각 청크를 SSE로 전송 (Disposable 추적)
+                Disposable disposable = streamFlux.subscribe(
                         chunk -> {
                             try {
                                 if (chunk != null && !chunk.isEmpty()) {
@@ -161,7 +178,6 @@ public class GPTRecommendationService {
                             }
                         },
                         error -> {
-                            // 에러 발생 시
                             try {
                                 emitter.send(SseEmitter.event()
                                         .name("error")
@@ -172,54 +188,45 @@ public class GPTRecommendationService {
                             emitter.completeWithError(error);
                         },
                         () -> {
-                            // 완료 시 - Reactor 스레드에서 blocking 작업(chatModel.call) 방지 위해 별도 스레드 사용
-                            String responseText = fullResponse.toString();
-                            log.info("[스트리밍 완료] 전체 응답 길이: {}", responseText.length());
+                            // 완료 시 - 후처리 (파싱, 저장, 결과 전송)
+                            try {
+                                String responseText = fullResponse.toString();
+                                log.info("[스트리밍 완료] 전체 응답 길이: {}", responseText.length());
 
-                            executorService.execute(() -> {
-                                try {
-                                    // 한글 띄어쓰기 보정 (blocking call이므로 executor 스레드에서 실행)
-                                    String correctedJson = fixKoreanSpacing(responseText);
+                                String correctedJson = fixKoreanSpacing(responseText);
+                                RecommendationResponse parsedResponse = parseResponse(correctedJson);
+                                log.info("[GPT 스트리밍] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
 
-                                    // DB에 저장하기 위해 파싱
-                                    RecommendationResponse parsedResponse = parseResponse(correctedJson);
-                                    log.info("[GPT 스트리밍] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
+                                enrichPriceInfo(parsedResponse);
 
-                                    // 가격 정보 추가
-                                    enrichPriceInfo(parsedResponse);
+                                Long recommendationId = saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
+                                parsedResponse.setRecommendationId(recommendationId);
 
-                                    // DB에 먼저 저장하여 recommendationId 획득
-                                    Long recommendationId = saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
-                                    parsedResponse.setRecommendationId(recommendationId); // null일 수 있음 (저장 실패 시)
-
-                                    if (recommendationId != null) {
-                                        log.info("[GPT 스트리밍] DB 저장 완료, recommendationId: {}", recommendationId);
-                                    } else {
-                                        log.warn("[GPT 스트리밍] DB 저장 실패, recommendationId가 null. 피드백 기능 비활성화됨");
-                                    }
-
-                                    // 가격 정보와 recommendationId가 포함된 결과를 JSON으로 변환
-                                    String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
-
-                                    // 보정된 결과를 result 이벤트로 전송 (단일 라인 JSON)
-                                    log.debug("[SSE] result 이벤트 전송");
-                                    emitter.send(SseEmitter.event()
-                                            .name("result")
-                                            .data(enrichedJson));
-
-                                    // 완료 이벤트 전송
-                                    emitter.send(SseEmitter.event()
-                                            .name("done")
-                                            .data("complete"));
-
-                                    emitter.complete();
-                                } catch (Exception e) {
-                                    log.error("[스트리밍 완료 에러]", e);
-                                    emitter.completeWithError(e);
+                                if (recommendationId != null) {
+                                    log.info("[GPT 스트리밍] DB 저장 완료, recommendationId: {}", recommendationId);
+                                } else {
+                                    log.warn("[GPT 스트리밍] DB 저장 실패, recommendationId가 null");
                                 }
-                            });
+
+                                String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
+
+                                emitter.send(SseEmitter.event()
+                                        .name("result")
+                                        .data(enrichedJson));
+
+                                emitter.send(SseEmitter.event()
+                                        .name("done")
+                                        .data("complete"));
+
+                                emitter.complete();
+                            } catch (Exception e) {
+                                log.error("[스트리밍 완료 에러]", e);
+                                emitter.completeWithError(e);
+                            }
                         }
                 );
+
+                disposableRef.set(disposable);
 
             } catch (Exception e) {
                 try {
@@ -233,12 +240,22 @@ public class GPTRecommendationService {
             }
         });
 
-        // 타임아웃 및 에러 핸들러
+        // 타임아웃/에러 시 Reactor 스트림도 취소 (GPT 호출 중단)
         emitter.onTimeout(() -> {
+            Disposable d = disposableRef.get();
+            if (d != null && !d.isDisposed()) {
+                d.dispose();
+                log.warn("[SSE] 타임아웃으로 GPT 스트림 취소");
+            }
             emitter.complete();
         });
 
         emitter.onError((error) -> {
+            Disposable d = disposableRef.get();
+            if (d != null && !d.isDisposed()) {
+                d.dispose();
+                log.warn("[SSE] 에러로 GPT 스트림 취소: {}", error.getMessage());
+            }
             emitter.complete();
         });
 
@@ -250,6 +267,7 @@ public class GPTRecommendationService {
         return recommendationResultRepository.findTop5ByUser_IdOrderByCreatedAtDesc(userId);
     }
 
+    @Transactional
     public void saveFeedback(Long recommendationId, Long userId, Boolean isHelpful, String comment) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
@@ -282,6 +300,7 @@ public class GPTRecommendationService {
      * 추천 결과 클릭 추적
      * (프론트엔드에서 사용자가 추천 서비스를 클릭했을 때 호출)
      */
+    @Transactional
     public void trackClick(Long recommendationId, Long userId, Long serviceId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
@@ -305,8 +324,17 @@ public class GPTRecommendationService {
         recommendationClickRepository.save(click);
     }
 
+    private List<ServiceEntity> getCachedServiceList() {
+        long now = System.currentTimeMillis();
+        if (cachedServiceList == null || now - serviceListCacheTime > SERVICE_LIST_CACHE_TTL_MS) {
+            cachedServiceList = serviceRepository.findAll();
+            serviceListCacheTime = now;
+        }
+        return cachedServiceList;
+    }
+
     private String buildPrompt(QuizRequest quiz, UserPreference userPreference) {
-        List<ServiceEntity> services = serviceRepository.findAll();
+        List<ServiceEntity> services = getCachedServiceList();
 
         StringBuilder serviceList = new StringBuilder();
         for (int i = 0; i < services.size(); i++) {
@@ -480,67 +508,67 @@ public class GPTRecommendationService {
     }
 
     /**
-     * 추천 결과에 가격 정보 추가
+     * 추천 결과에 가격 정보 추가 (배치 쿼리로 N+1 방지)
      */
     private void enrichPriceInfo(RecommendationResponse response) {
-        if (response.getRecommendations() == null) {
+        if (response.getRecommendations() == null || response.getRecommendations().isEmpty()) {
             return;
         }
+
+        // 모든 serviceId를 한 번에 수집하여 배치 쿼리
+        List<Long> serviceIds = response.getRecommendations().stream()
+                .map(com.project.subing.dto.recommendation.RecommendationItem::getServiceId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+
+        if (serviceIds.isEmpty()) {
+            return;
+        }
+
+        // 1번의 쿼리로 모든 플랜 조회
+        Map<Long, List<SubscriptionPlan>> plansByServiceId = subscriptionPlanRepository
+                .findByServiceIdIn(serviceIds).stream()
+                .collect(Collectors.groupingBy(plan -> plan.getService().getId()));
 
         for (com.project.subing.dto.recommendation.RecommendationItem item : response.getRecommendations()) {
             if (item.getServiceId() == null) {
                 continue;
             }
 
-            try {
-                // 서비스의 모든 플랜 조회
-                List<SubscriptionPlan> plans = subscriptionPlanRepository.findByServiceId(item.getServiceId());
-
-                if (plans.isEmpty()) {
-                    continue;
-                }
-
-                // 무료 플랜 여부 확인
-                boolean hasFreePlan = plans.stream()
-                    .anyMatch(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() == 0);
-
-                // 최저가 조회 (무료 제외)
-                Integer minPrice = plans.stream()
-                    .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
-                    .mapToInt(SubscriptionPlan::getMonthlyPrice)
-                    .min()
-                    .orElse(0);
-
-                // 최고가 조회 (무료 제외)
-                Integer maxPrice = plans.stream()
-                    .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
-                    .mapToInt(SubscriptionPlan::getMonthlyPrice)
-                    .max()
-                    .orElse(0);
-
-                // 가격 범위 문자열 생성
-                String priceRange;
-                if (hasFreePlan && minPrice > 0) {
-                    priceRange = String.format("무료 ~ ₩%,d/월", maxPrice);
-                } else if (hasFreePlan) {
-                    priceRange = "무료";
-                } else if (minPrice == maxPrice) {
-                    priceRange = String.format("₩%,d/월", minPrice);
-                } else {
-                    priceRange = String.format("₩%,d ~ ₩%,d/월", minPrice, maxPrice);
-                }
-
-                // DTO에 설정
-                item.setMinPrice(minPrice > 0 ? minPrice : null);
-                item.setHasFreePlan(hasFreePlan);
-                item.setPriceRange(priceRange);
-
-                log.debug("[가격 정보] {} - 최저가: {}원, 무료 플랜: {}, 범위: {}",
-                        item.getServiceName(), minPrice > 0 ? minPrice : "없음", hasFreePlan, priceRange);
-
-            } catch (Exception e) {
-                log.warn("[가격 정보 조회 실패] {}: {}", item.getServiceName(), e.getMessage());
+            List<SubscriptionPlan> plans = plansByServiceId.getOrDefault(item.getServiceId(), List.of());
+            if (plans.isEmpty()) {
+                continue;
             }
+
+            boolean hasFreePlan = plans.stream()
+                .anyMatch(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() == 0);
+
+            Integer minPrice = plans.stream()
+                .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
+                .mapToInt(SubscriptionPlan::getMonthlyPrice)
+                .min()
+                .orElse(0);
+
+            Integer maxPrice = plans.stream()
+                .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
+                .mapToInt(SubscriptionPlan::getMonthlyPrice)
+                .max()
+                .orElse(0);
+
+            String priceRange;
+            if (hasFreePlan && minPrice > 0) {
+                priceRange = String.format("무료 ~ ₩%,d/월", maxPrice);
+            } else if (hasFreePlan) {
+                priceRange = "무료";
+            } else if (minPrice == maxPrice) {
+                priceRange = String.format("₩%,d/월", minPrice);
+            } else {
+                priceRange = String.format("₩%,d ~ ₩%,d/월", minPrice, maxPrice);
+            }
+
+            item.setMinPrice(minPrice > 0 ? minPrice : null);
+            item.setHasFreePlan(hasFreePlan);
+            item.setPriceRange(priceRange);
         }
     }
 }
