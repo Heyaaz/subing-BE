@@ -10,9 +10,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Optional;
 
+@Tag(name = "예산 관리", description = "월별 예산 설정 및 조회")
 @RestController
 @RequestMapping("/api/v1/budgets")
 @RequiredArgsConstructor

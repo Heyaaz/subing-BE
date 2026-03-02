@@ -7,8 +7,10 @@ import com.project.subing.service.StatisticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "통계", description = "월별 지출 및 카테고리 분석")
 @RestController
 @RequestMapping("/api/v1/statistics")
 @RequiredArgsConstructor

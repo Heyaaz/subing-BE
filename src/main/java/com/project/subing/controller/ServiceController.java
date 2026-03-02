@@ -10,8 +10,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 
+@Tag(name = "서비스 조회", description = "서비스 목록 및 비교")
 @RestController
 @RequestMapping("/api/v1/services")
 @RequiredArgsConstructor

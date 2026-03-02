@@ -13,8 +13,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 
+@Tag(name = "관리자 - 최적화 설정", description = "최적화 정책 관리 (ADMIN)")
 @RestController
 @RequestMapping("/api/v1/admin/optimization-config")
 @RequiredArgsConstructor

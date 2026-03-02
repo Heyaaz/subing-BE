@@ -10,8 +10,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 
+@Tag(name = "관리자 - 사용자", description = "사용자 관리 (ADMIN)")
 @RestController
 @RequestMapping("/api/v1/admin/users")
 @RequiredArgsConstructor

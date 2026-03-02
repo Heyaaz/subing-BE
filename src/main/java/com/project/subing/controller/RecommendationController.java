@@ -12,8 +12,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 
+@Tag(name = "AI 추천", description = "GPT 기반 구독 추천 및 스트리밍")
 @RestController
 @RequestMapping("/api/v1/recommendations")
 @RequiredArgsConstructor

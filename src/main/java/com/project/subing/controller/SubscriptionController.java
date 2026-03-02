@@ -12,8 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 
+@Tag(name = "구독 관리", description = "구독 CRUD 및 상태 관리")
 @RestController
 @RequestMapping("/api/v1/subscriptions")
 @RequiredArgsConstructor
