@@ -28,6 +28,7 @@ EXPOSE 8080
 # Heap(350m) + Metaspace(100m) + CodeCache(48m) + Threads + Native ≈ 450MB
 ENV JAVA_OPTS="-Xms200m -Xmx350m \
   -XX:MaxMetaspaceSize=100m \
+  -XX:MaxDirectMemorySize=64m \
   -XX:+UseSerialGC \
   -Xss256k \
   -XX:ReservedCodeCacheSize=48m \

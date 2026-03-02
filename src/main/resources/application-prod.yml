@@ -68,3 +68,10 @@ server:
     min-response-size: 1024
   http2:
     enabled: true
+
+# Swagger 프로덕션 비활성화 (Metaspace ~20MB 절약)
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
