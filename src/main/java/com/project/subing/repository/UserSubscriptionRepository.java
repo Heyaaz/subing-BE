@@ -49,4 +49,13 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
     // 관리자용: 모든 구독을 Service와 함께 조회 (LAZY 로딩 방지)
     @Query("SELECT DISTINCT us FROM UserSubscription us LEFT JOIN FETCH us.service")
     List<UserSubscription> findAllWithService();
+
+    // 관리자 통계용: 활성 구독 수
+    @Query("SELECT COUNT(us) FROM UserSubscription us WHERE us.isActive = true")
+    long countActiveSubscriptions();
+
+    // 관리자 통계용: 카테고리별 활성 구독 수
+    @Query("SELECT s.category, COUNT(us) FROM UserSubscription us " +
+           "JOIN us.service s WHERE us.isActive = true GROUP BY s.category")
+    List<Object[]> countActiveSubscriptionsByCategory();
 }

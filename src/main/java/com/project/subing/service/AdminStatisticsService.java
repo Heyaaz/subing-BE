@@ -1,8 +1,6 @@
 package com.project.subing.service;
 
 import com.project.subing.domain.common.ServiceCategory;
-import com.project.subing.domain.subscription.entity.UserSubscription;
-import com.project.subing.domain.user.entity.User;
 import com.project.subing.domain.user.entity.UserTier;
 import com.project.subing.dto.admin.AdminStatisticsResponse;
 import com.project.subing.repository.ServiceRepository;
@@ -34,34 +32,20 @@ public class AdminStatisticsService {
     private static final int PRO_MONTHLY_PRICE = 9900;
 
     public AdminStatisticsResponse getAdminStatistics() {
-        // 1. 사용자 통계
-        List<User> allUsers = userRepository.findAll();
-        long totalUsers = allUsers.size();
-        long freeUsers = allUsers.stream()
-                .filter(user -> user.getTier() == UserTier.FREE)
-                .count();
-        long proUsers = allUsers.stream()
-                .filter(user -> user.getTier() == UserTier.PRO)
-                .count();
+        // count 쿼리로 전체 엔티티 로드 방지
+        long totalUsers = userRepository.count();
+        long freeUsers = userRepository.countByTier(UserTier.FREE);
+        long proUsers = userRepository.countByTier(UserTier.PRO);
 
-        // 2. 구독 통계 - Service와 함께 fetch join
-        List<UserSubscription> allSubscriptions = subscriptionRepository.findAllWithService();
-        long activeSubscriptions = allSubscriptions.stream()
-                .filter(UserSubscription::getIsActive)
-                .count();
+        long activeSubscriptions = subscriptionRepository.countActiveSubscriptions();
 
-        // 3. 서비스 및 플랜 통계
         long totalServices = serviceRepository.count();
         long totalPlans = planRepository.count();
 
-        // 4. 월별 매출 (PRO 사용자 * 9900원)
         int totalMonthlyRevenue = (int) (proUsers * PRO_MONTHLY_PRICE);
 
-        // 5. 월별 가입자 수 (최근 12개월)
-        Map<String, Long> usersByMonth = calculateUsersByMonth(allUsers);
-
-        // 6. 카테고리별 구독 수
-        Map<String, Long> subscriptionsByCategory = calculateSubscriptionsByCategory(allSubscriptions);
+        Map<String, Long> usersByMonth = calculateUsersByMonth();
+        Map<String, Long> subscriptionsByCategory = calculateSubscriptionsByCategory();
 
         return AdminStatisticsResponse.builder()
                 .totalUsers(totalUsers)
@@ -76,7 +60,7 @@ public class AdminStatisticsService {
                 .build();
     }
 
-    private Map<String, Long> calculateUsersByMonth(List<User> users) {
+    private Map<String, Long> calculateUsersByMonth() {
         Map<String, Long> usersByMonth = new HashMap<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM");
 
@@ -87,31 +71,33 @@ public class AdminStatisticsService {
             usersByMonth.put(monthKey, 0L);
         }
 
-        // 사용자 수 집계
-        for (User user : users) {
-            String monthKey = user.getCreatedAt().format(formatter);
-            if (usersByMonth.containsKey(monthKey)) {
-                usersByMonth.put(monthKey, usersByMonth.get(monthKey) + 1);
+        // DB에서 GROUP BY로 집계 (전체 유저 로드 대신)
+        LocalDateTime since = now.minusMonths(12);
+        List<Object[]> results = userRepository.countUsersByMonthSince(since);
+        for (Object[] row : results) {
+            String month = (String) row[0];
+            Long count = (Long) row[1];
+            if (usersByMonth.containsKey(month)) {
+                usersByMonth.put(month, count);
             }
         }
 
         return usersByMonth;
     }
 
-    private Map<String, Long> calculateSubscriptionsByCategory(List<UserSubscription> subscriptions) {
+    private Map<String, Long> calculateSubscriptionsByCategory() {
         Map<String, Long> categoryCount = new HashMap<>();
 
-        // 모든 카테고리 초기화
         for (ServiceCategory category : ServiceCategory.values()) {
             categoryCount.put(category.name(), 0L);
         }
 
-        // 활성 구독만 집계
-        for (UserSubscription subscription : subscriptions) {
-            if (subscription.getIsActive() && subscription.getService() != null) {
-                ServiceCategory category = subscription.getService().getCategory();
-                categoryCount.put(category.name(), categoryCount.get(category.name()) + 1);
-            }
+        // DB에서 GROUP BY로 집계 (전체 구독 로드 대신)
+        List<Object[]> results = subscriptionRepository.countActiveSubscriptionsByCategory();
+        for (Object[] row : results) {
+            ServiceCategory category = (ServiceCategory) row[0];
+            Long count = (Long) row[1];
+            categoryCount.put(category.name(), count);
         }
 
         return categoryCount;
