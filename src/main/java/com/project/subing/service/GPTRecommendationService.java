@@ -26,6 +26,7 @@ import com.project.subing.repository.SubscriptionPlanRepository;
 import com.project.subing.repository.UserPreferenceRepository;
 import com.project.subing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.messages.Message;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -89,20 +91,15 @@ public class GPTRecommendationService {
     public RecommendationResponse getRecommendationFromCache(Long userId, QuizRequest quiz, UserPreference userPreference, PromptVersion promptVersion) {
         // 1. 프롬프트 생성
         String prompt = buildPrompt(quiz, userPreference);
-        System.out.println("[GPT 추천] 프롬프트에 서비스 ID 포함 여부 확인:");
-        System.out.println(prompt.substring(0, Math.min(500, prompt.length())) + "...");
+        log.debug("[GPT 추천] 프롬프트 미리보기: {}...", prompt.substring(0, Math.min(500, prompt.length())));
 
         // 2. GPT API 호출
         String response = callGPTAPI(prompt, promptVersion);
-        System.out.println("[GPT 추천] GPT 응답 미리보기:");
-        System.out.println(response.substring(0, Math.min(300, response.length())) + "...");
+        log.debug("[GPT 추천] GPT 응답 미리보기: {}...", response.substring(0, Math.min(300, response.length())));
 
         // 3. JSON 파싱
         RecommendationResponse parsedResponse = parseResponse(response);
-        System.out.println("[GPT 추천] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
-        parsedResponse.getRecommendations().forEach(item ->
-            System.out.println("[GPT 추천] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
-        );
+        log.info("[GPT 추천] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
 
         return parsedResponse;
     }
@@ -125,8 +122,7 @@ public class GPTRecommendationService {
 
                 // 3. 프롬프트 생성
                 String prompt = buildPrompt(quiz, userPreference);
-                System.out.println("[GPT 스트리밍] 프롬프트에 서비스 ID 포함 여부 확인:");
-                System.out.println(prompt.substring(0, Math.min(500, prompt.length())) + "...");
+                log.debug("[GPT 스트리밍] 프롬프트 미리보기: {}...", prompt.substring(0, Math.min(500, prompt.length())));
                 String systemPrompt = promptVersion.getSystemPrompt();
 
                 List<Message> messages = List.of(
@@ -178,7 +174,7 @@ public class GPTRecommendationService {
                         () -> {
                             // 완료 시 - Reactor 스레드에서 blocking 작업(chatModel.call) 방지 위해 별도 스레드 사용
                             String responseText = fullResponse.toString();
-                            System.out.println("[스트리밍 완료] 전체 응답 길이: " + responseText.length());
+                            log.info("[스트리밍 완료] 전체 응답 길이: {}", responseText.length());
 
                             executorService.execute(() -> {
                                 try {
@@ -187,10 +183,7 @@ public class GPTRecommendationService {
 
                                     // DB에 저장하기 위해 파싱
                                     RecommendationResponse parsedResponse = parseResponse(correctedJson);
-                                    System.out.println("[GPT 스트리밍] 파싱된 추천 개수: " + parsedResponse.getRecommendations().size());
-                                    parsedResponse.getRecommendations().forEach(item ->
-                                        System.out.println("[GPT 스트리밍] - serviceId: " + item.getServiceId() + ", serviceName: " + item.getServiceName())
-                                    );
+                                    log.info("[GPT 스트리밍] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
 
                                     // 가격 정보 추가
                                     enrichPriceInfo(parsedResponse);
@@ -200,20 +193,19 @@ public class GPTRecommendationService {
                                     parsedResponse.setRecommendationId(recommendationId); // null일 수 있음 (저장 실패 시)
 
                                     if (recommendationId != null) {
-                                        System.out.println("[GPT 스트리밍] DB 저장 완료, recommendationId: " + recommendationId);
+                                        log.info("[GPT 스트리밍] DB 저장 완료, recommendationId: {}", recommendationId);
                                     } else {
-                                        System.err.println("[GPT 스트리밍] DB 저장 실패, recommendationId가 null입니다. 피드백 기능 비활성화됨.");
+                                        log.warn("[GPT 스트리밍] DB 저장 실패, recommendationId가 null. 피드백 기능 비활성화됨");
                                     }
 
                                     // 가격 정보와 recommendationId가 포함된 결과를 JSON으로 변환
                                     String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
 
                                     // 보정된 결과를 result 이벤트로 전송 (단일 라인 JSON)
-                                    System.out.println("[SSE] result 이벤트 전송 시작");
+                                    log.debug("[SSE] result 이벤트 전송");
                                     emitter.send(SseEmitter.event()
                                             .name("result")
                                             .data(enrichedJson));
-                                    System.out.println("[SSE] result 이벤트 전송 완료");
 
                                     // 완료 이벤트 전송
                                     emitter.send(SseEmitter.event()
@@ -222,8 +214,7 @@ public class GPTRecommendationService {
 
                                     emitter.complete();
                                 } catch (Exception e) {
-                                    System.err.println("[스트리밍 완료 에러]: " + e.getMessage());
-                                    e.printStackTrace();
+                                    log.error("[스트리밍 완료 에러]", e);
                                     emitter.completeWithError(e);
                                 }
                             });
@@ -483,9 +474,8 @@ public class GPTRecommendationService {
         } catch (UserNotFoundException e) {
             throw e;
         } catch (Exception e) {
-            System.err.println("[추천 결과 저장 실패] " + e.getMessage());
-            e.printStackTrace();
-            return null; // 저장 실패 시 null 반환 (추천 결과는 보여주되 피드백 불가)
+            log.error("[추천 결과 저장 실패]", e);
+            return null;
         }
     }
 
@@ -545,16 +535,11 @@ public class GPTRecommendationService {
                 item.setHasFreePlan(hasFreePlan);
                 item.setPriceRange(priceRange);
 
-                System.out.println(String.format(
-                    "[가격 정보] %s - 최저가: %s원, 무료 플랜: %s, 범위: %s",
-                    item.getServiceName(),
-                    minPrice > 0 ? String.format("%,d", minPrice) : "없음",
-                    hasFreePlan ? "있음" : "없음",
-                    priceRange
-                ));
+                log.debug("[가격 정보] {} - 최저가: {}원, 무료 플랜: {}, 범위: {}",
+                        item.getServiceName(), minPrice > 0 ? minPrice : "없음", hasFreePlan, priceRange);
 
             } catch (Exception e) {
-                System.err.println("[가격 정보 조회 실패] " + item.getServiceName() + ": " + e.getMessage());
+                log.warn("[가격 정보 조회 실패] {}: {}", item.getServiceName(), e.getMessage());
             }
         }
     }
