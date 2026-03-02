@@ -188,41 +188,43 @@ public class GPTRecommendationService {
                             emitter.completeWithError(error);
                         },
                         () -> {
-                            // 완료 시 - 후처리 (파싱, 저장, 결과 전송)
-                            try {
-                                String responseText = fullResponse.toString();
-                                log.info("[스트리밍 완료] 전체 응답 길이: {}", responseText.length());
+                            // 완료 시 - DB 작업은 Reactor 스레드에서 블로킹하면 안 됨
+                            String responseText = fullResponse.toString();
+                            log.info("[스트리밍 완료] 전체 응답 길이: {}", responseText.length());
 
-                                String correctedJson = fixKoreanSpacing(responseText);
-                                RecommendationResponse parsedResponse = parseResponse(correctedJson);
-                                log.info("[GPT 스트리밍] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
+                            executorService.execute(() -> {
+                                try {
+                                    String correctedJson = fixKoreanSpacing(responseText);
+                                    RecommendationResponse parsedResponse = parseResponse(correctedJson);
+                                    log.info("[GPT 스트리밍] 파싱된 추천 개수: {}", parsedResponse.getRecommendations().size());
 
-                                enrichPriceInfo(parsedResponse);
+                                    enrichPriceInfo(parsedResponse);
 
-                                Long recommendationId = saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
-                                parsedResponse.setRecommendationId(recommendationId);
+                                    Long recommendationId = saveRecommendationResult(userId, quiz, parsedResponse, promptVersion);
+                                    parsedResponse.setRecommendationId(recommendationId);
 
-                                if (recommendationId != null) {
-                                    log.info("[GPT 스트리밍] DB 저장 완료, recommendationId: {}", recommendationId);
-                                } else {
-                                    log.warn("[GPT 스트리밍] DB 저장 실패, recommendationId가 null");
+                                    if (recommendationId != null) {
+                                        log.info("[GPT 스트리밍] DB 저장 완료, recommendationId: {}", recommendationId);
+                                    } else {
+                                        log.warn("[GPT 스트리밍] DB 저장 실패, recommendationId가 null");
+                                    }
+
+                                    String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
+
+                                    emitter.send(SseEmitter.event()
+                                            .name("result")
+                                            .data(enrichedJson));
+
+                                    emitter.send(SseEmitter.event()
+                                            .name("done")
+                                            .data("complete"));
+
+                                    emitter.complete();
+                                } catch (Exception e) {
+                                    log.error("[스트리밍 완료 에러]", e);
+                                    emitter.completeWithError(e);
                                 }
-
-                                String enrichedJson = objectMapper.writeValueAsString(parsedResponse);
-
-                                emitter.send(SseEmitter.event()
-                                        .name("result")
-                                        .data(enrichedJson));
-
-                                emitter.send(SseEmitter.event()
-                                        .name("done")
-                                        .data("complete"));
-
-                                emitter.complete();
-                            } catch (Exception e) {
-                                log.error("[스트리밍 완료 에러]", e);
-                                emitter.completeWithError(e);
-                            }
+                            });
                         }
                 );
 

@@ -24,11 +24,11 @@ COPY --from=build /app/build/libs/*.jar app.jar
 ENV PORT=8080
 EXPOSE 8080
 
-# JVM 메모리 최적화 (Railway Hobby 플랜: 총 RSS ~450MB 목표)
-# Heap(350m) + Metaspace(100m) + CodeCache(48m) + Threads + Native ≈ 450MB
-ENV JAVA_OPTS="-Xms200m -Xmx350m \
-  -XX:MaxMetaspaceSize=100m \
-  -XX:MaxDirectMemorySize=64m \
+# JVM 메모리 최적화 (Railway 1GB 서버 기준, 총 RSS ~800MB 목표)
+# Heap(512m) + Metaspace(128m) + DirectMem(128m) + CodeCache(48m) + etc ≈ 800MB
+ENV JAVA_OPTS="-Xms256m -Xmx512m \
+  -XX:MaxMetaspaceSize=128m \
+  -XX:MaxDirectMemorySize=128m \
   -XX:+UseSerialGC \
   -Xss256k \
   -XX:ReservedCodeCacheSize=48m \
