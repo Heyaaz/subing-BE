@@ -1,7 +1,10 @@
 package com.project.subing.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.subing.domain.common.BillingCycle;
 import com.project.subing.domain.common.ServiceCategory;
+import com.project.subing.domain.optimization.entity.OptimizationEventType;
 import com.project.subing.domain.service.entity.ServiceEntity;
 import com.project.subing.domain.service.entity.SubscriptionPlan;
 import com.project.subing.domain.subscription.entity.UserSubscription;
@@ -25,6 +28,7 @@ public class SubscriptionOptimizationService {
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final OptimizationEngineConfigService optimizationEngineConfigService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 중복 서비스 감지
@@ -34,8 +38,13 @@ public class SubscriptionOptimizationService {
         List<UserSubscription> activeSubscriptions =
                 userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
 
+        // 0원(무료) 구독은 중복 감지 대상에서 제외
+        List<UserSubscription> paidSubscriptions = activeSubscriptions.stream()
+                .filter(sub -> sub.getMonthlyPrice() > 0)
+                .toList();
+
         // 카테고리별로 그룹화
-        Map<ServiceCategory, List<UserSubscription>> categoryMap = activeSubscriptions.stream()
+        Map<ServiceCategory, List<UserSubscription>> categoryMap = paidSubscriptions.stream()
                 .collect(Collectors.groupingBy(sub -> sub.getService().getCategory()));
 
         // 2개 이상인 카테고리만 필터링
@@ -73,7 +82,9 @@ public class SubscriptionOptimizationService {
 
         // 1. 활성 구독 조회 (Service JOIN FETCH) - 1 쿼리
         List<UserSubscription> activeSubscriptions =
-                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
+                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId).stream()
+                        .filter(sub -> sub.getMonthlyPrice() > 0)
+                        .toList();
 
         if (activeSubscriptions.isEmpty()) return Collections.emptyList();
 
@@ -137,7 +148,7 @@ public class SubscriptionOptimizationService {
                     if (netSavings <= 0) {
                         continue;
                     }
-                    int confidenceScore = calculateConfidenceScore(subscription, savings, netSavings, switchCost, true, policy);
+                    int confidenceScore = calculateConfidenceScore(subscription, savings, netSavings, switchCost, true);
                     List<String> reasonCodes = buildReasonCodes(subscription, true, switchCost, confidenceScore);
 
                     alternatives.add(new CheaperAlternative(
@@ -177,7 +188,7 @@ public class SubscriptionOptimizationService {
                         if (netSavings <= 0) {
                             continue;
                         }
-                        int confidenceScore = calculateConfidenceScore(subscription, savings, netSavings, switchCost, false, policy);
+                        int confidenceScore = calculateConfidenceScore(subscription, savings, netSavings, switchCost, false);
                         List<String> reasonCodes = buildReasonCodes(subscription, false, switchCost, confidenceScore);
 
                         alternatives.add(new CheaperAlternative(
@@ -239,13 +250,28 @@ public class SubscriptionOptimizationService {
             bestBySubscription.merge(subscriptionId, alternative, this::pickBetterAlternative);
         }
 
-        List<CheaperAlternative> selected = new ArrayList<>(bestBySubscription.values());
-        selected.sort((a, b) -> {
+        // 순절약 기준 내림차순 정렬 (다운그레이드 우선)
+        List<CheaperAlternative> sorted = new ArrayList<>(bestBySubscription.values());
+        sorted.sort((a, b) -> {
             int netSavingsDiff = Integer.compare(b.getNetSavings(), a.getNetSavings());
             if (netSavingsDiff != 0) return netSavingsDiff;
             if (a.isSameService() != b.isSameService()) return a.isSameService() ? -1 : 1;
             return Integer.compare(b.getConfidenceScore(), a.getConfidenceScore());
         });
+
+        // 대안 서비스 충돌 제거: 서로 다른 구독이 같은 대안 서비스를 추천하는 경우 상위 1개만 유지
+        Set<Long> usedAlternativeServiceIds = new HashSet<>();
+        List<CheaperAlternative> selected = new ArrayList<>();
+        for (CheaperAlternative alt : sorted) {
+            Long altServiceId = alt.getAlternativeService().getId();
+            if (alt.isSameService() || usedAlternativeServiceIds.add(altServiceId)) {
+                selected.add(alt);
+            } else {
+                log.info("포트폴리오 충돌 제거 - 대안 서비스 '{}' 중복으로 제외 (구독: {})",
+                        alt.getAlternativeService().getServiceName(),
+                        alt.getCurrentSubscription().getPlanName());
+            }
+        }
 
         int maxChangesPerRun = Math.max(1, policy.getMaxChangesPerRun());
         if (selected.size() > maxChangesPerRun) {
@@ -265,31 +291,32 @@ public class SubscriptionOptimizationService {
             return;
         }
 
-        String normalizedEventType = request.getEventType().trim().toUpperCase(Locale.ROOT);
-        Set<String> supportedEvents = Set.of("IMPRESSION", "CLICK_ALTERNATIVE", "CLICK_MANAGE", "DISMISS", "REFRESH");
-        if (!supportedEvents.contains(normalizedEventType)) {
-            throw new IllegalArgumentException("지원하지 않는 optimization 이벤트 타입입니다: " + request.getEventType());
-        }
+        OptimizationEventType eventType = OptimizationEventType.from(request.getEventType());
 
         log.info("optimization_event userId={} eventType={} source={} suggestionType={} currentSubscriptionId={} alternativeServiceId={} metadata={}",
                 userId,
-                normalizedEventType,
+                eventType,
                 request.getSource(),
                 request.getSuggestionType(),
                 request.getCurrentSubscriptionId(),
                 request.getAlternativeServiceId(),
-                trimMetadata(request.getMetadata()));
+                serializeMetadata(request.getMetadata()));
     }
 
-    private String trimMetadata(Map<String, Object> metadata) {
+    private String serializeMetadata(Map<String, Object> metadata) {
         if (metadata == null || metadata.isEmpty()) {
             return "{}";
         }
-        String serialized = metadata.toString();
-        if (serialized.length() > 500) {
-            return serialized.substring(0, 500) + "...";
+        try {
+            String json = objectMapper.writeValueAsString(metadata);
+            if (json.length() > 500) {
+                return json.substring(0, 500) + "...";
+            }
+            return json;
+        } catch (JsonProcessingException e) {
+            log.warn("메타데이터 직렬화 실패", e);
+            return "{}";
         }
-        return serialized;
     }
 
     private long toNanoTimeout(int timeoutMs) {
@@ -339,7 +366,7 @@ public class SubscriptionOptimizationService {
     }
 
     private int calculateConfidenceScore(UserSubscription subscription, int savings, int netSavings,
-                                         int switchCost, boolean sameService, OptimizationEnginePolicy policy) {
+                                         int switchCost, boolean sameService) {
         int score = 65;
         score += sameService ? 20 : 5;
         score += switchCost == 0 ? 5 : 0;
@@ -347,7 +374,6 @@ public class SubscriptionOptimizationService {
         score -= netSavings <= 2000 ? 10 : 0;
         score -= (subscription.getBillingCycle() == BillingCycle.YEARLY && !sameService) ? 15 : 0;
         score -= savings <= 1000 ? 5 : 0;
-        score += policy.getMaxChangesPerRun() <= 3 ? 2 : 0;
         return Math.max(0, Math.min(100, score));
     }
 
