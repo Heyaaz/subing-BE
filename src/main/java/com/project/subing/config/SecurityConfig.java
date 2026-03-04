@@ -71,6 +71,7 @@ public class SecurityConfig {
             "http://localhost:3000",      // 로컬 개발 환경
             "http://localhost:5173",      // Vite 개발 환경
             "https://subing.app",         // 프로덕션 (추후 도메인으로 변경)
+            "https://subing.store",       // 프로덕션 도메인
             "https://*.vercel.app"        // Vercel 배포 환경
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
