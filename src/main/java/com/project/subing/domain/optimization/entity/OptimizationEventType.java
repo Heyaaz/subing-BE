@@ -1,7 +1,5 @@
 package com.project.subing.domain.optimization.entity;
 
-import java.util.Arrays;
-
 public enum OptimizationEventType {
     IMPRESSION,
     CLICK_ALTERNATIVE,
@@ -10,11 +8,10 @@ public enum OptimizationEventType {
     REFRESH;
 
     public static OptimizationEventType from(String value) {
-        String normalized = value.trim().toUpperCase();
-        return Arrays.stream(values())
-                .filter(type -> type.name().equals(normalized))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "지원하지 않는 optimization 이벤트 타입입니다: " + value));
+        try {
+            return valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("지원하지 않는 optimization 이벤트 타입입니다: " + value);
+        }
     }
 }
