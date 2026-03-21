@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SubscriptionOptimizationService {
 
+    private static final int MAX_METADATA_JSON_LENGTH = 500;
+
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final OptimizationEngineConfigService optimizationEngineConfigService;
@@ -39,9 +41,7 @@ public class SubscriptionOptimizationService {
                 userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId);
 
         // 0원(무료) 구독은 중복 감지 대상에서 제외
-        List<UserSubscription> paidSubscriptions = activeSubscriptions.stream()
-                .filter(sub -> sub.getMonthlyPrice() > 0)
-                .toList();
+        List<UserSubscription> paidSubscriptions = filterPaid(activeSubscriptions);
 
         // 카테고리별로 그룹화
         Map<ServiceCategory, List<UserSubscription>> categoryMap = paidSubscriptions.stream()
@@ -82,9 +82,7 @@ public class SubscriptionOptimizationService {
 
         // 1. 활성 구독 조회 (Service JOIN FETCH) - 1 쿼리
         List<UserSubscription> activeSubscriptions =
-                userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId).stream()
-                        .filter(sub -> sub.getMonthlyPrice() > 0)
-                        .toList();
+                filterPaid(userSubscriptionRepository.findByUserIdAndIsActiveTrueWithService(userId));
 
         if (activeSubscriptions.isEmpty()) return Collections.emptyList();
 
@@ -309,14 +307,20 @@ public class SubscriptionOptimizationService {
         }
         try {
             String json = objectMapper.writeValueAsString(metadata);
-            if (json.length() > 500) {
-                return json.substring(0, 500) + "...";
+            if (json.length() > MAX_METADATA_JSON_LENGTH) {
+                return json.substring(0, MAX_METADATA_JSON_LENGTH) + "...";
             }
             return json;
         } catch (JsonProcessingException e) {
             log.warn("메타데이터 직렬화 실패", e);
             return "{}";
         }
+    }
+
+    private List<UserSubscription> filterPaid(List<UserSubscription> subscriptions) {
+        return subscriptions.stream()
+                .filter(sub -> sub.getMonthlyPrice() > 0)
+                .toList();
     }
 
     private long toNanoTimeout(int timeoutMs) {
