@@ -542,20 +542,19 @@ public class GPTRecommendationService {
                 continue;
             }
 
-            boolean hasFreePlan = plans.stream()
-                .anyMatch(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() == 0);
-
-            Integer minPrice = plans.stream()
-                .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
-                .mapToInt(SubscriptionPlan::getMonthlyPrice)
-                .min()
-                .orElse(0);
-
-            Integer maxPrice = plans.stream()
-                .filter(plan -> plan.getMonthlyPrice() != null && plan.getMonthlyPrice() > 0)
-                .mapToInt(SubscriptionPlan::getMonthlyPrice)
-                .max()
-                .orElse(0);
+            boolean hasFreePlan = false;
+            int minPrice = 0;
+            int maxPrice = 0;
+            for (SubscriptionPlan plan : plans) {
+                Integer price = plan.getMonthlyPrice();
+                if (price == null) continue;
+                if (price == 0) {
+                    hasFreePlan = true;
+                } else {
+                    if (minPrice == 0 || price < minPrice) minPrice = price;
+                    if (price > maxPrice) maxPrice = price;
+                }
+            }
 
             String priceRange;
             if (hasFreePlan && minPrice > 0) {
