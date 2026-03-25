@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
     steps:
       - name: Checkout
@@ -40,7 +42,7 @@ jobs:
           path: build/reports/tests/
 
       - name: Discord notification (failure)
-        if: ${{ failure() && secrets.DISCORD_WEBHOOK != '' }}
+        if: ${{ failure() && env.DISCORD_WEBHOOK != '' }}
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
@@ -52,7 +54,7 @@ jobs:
           status: ${{ job.status }}
 
       - name: Discord notification (deploy)
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DISCORD_WEBHOOK != '' }}
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.DISCORD_WEBHOOK != '' }}
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
