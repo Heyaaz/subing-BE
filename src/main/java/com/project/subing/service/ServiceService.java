@@ -15,7 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -28,31 +32,19 @@ public class ServiceService {
     
     public List<ServiceResponse> getAllServices() {
         List<ServiceEntity> services = serviceRepository.findAll();
-        List<ServiceResponse> responses = new ArrayList<>();
-        
-        for (ServiceEntity service : services) {
-            responses.add(convertEntityToDto(service));
-        }
-        
-        return responses;
+        return convertEntitiesToDtos(services);
     }
     
     public ServiceResponse getServiceById(Long serviceId) {
         ServiceEntity service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new ServiceNotFoundException(serviceId));
-        return convertEntityToDto(service);
+        return convertEntitiesToDtos(List.of(service)).get(0);
     }
     
     public List<ServiceResponse> getServicesByCategory(String category) {
         ServiceCategory serviceCategory = ServiceCategory.valueOf(category.toUpperCase());
         List<ServiceEntity> services = serviceRepository.findByCategory(serviceCategory);
-        List<ServiceResponse> responses = new ArrayList<>();
-        
-        for (ServiceEntity service : services) {
-            responses.add(convertEntityToDto(service));
-        }
-        
-        return responses;
+        return convertEntitiesToDtos(services);
     }
     
     public ServiceComparisonResponse compareServices(ServiceComparisonRequest request) {
@@ -65,39 +57,54 @@ public class ServiceService {
                     .toList();
             throw new MissingServicesException(missingIds);
         }
-        
-        List<ServiceResponse> serviceResponses = new ArrayList<>();
-        for (ServiceEntity service : services) {
-            serviceResponses.add(convertEntityToDto(service));
+
+        Map<Long, Integer> requestOrder = new LinkedHashMap<>();
+        for (int i = 0; i < request.getServiceIds().size(); i++) {
+            requestOrder.put(request.getServiceIds().get(i), i);
         }
-        
+
+        services.sort(Comparator.comparingInt(service -> requestOrder.getOrDefault(service.getId(), Integer.MAX_VALUE)));
+        List<ServiceResponse> serviceResponses = convertEntitiesToDtos(services);
+
         ComparisonSummary summary = calculateComparisonSummary(serviceResponses);
-        
+
         return ServiceComparisonResponse.builder()
                 .services(serviceResponses)
                 .summary(summary)
                 .build();
     }
     
-    // Entity를 DTO로 변환하는 메서드
-    private ServiceResponse convertEntityToDto(ServiceEntity serviceEntity) {
-        List<SubscriptionPlan> plans = subscriptionPlanRepository.findByServiceId(serviceEntity.getId());
-        List<SubscriptionPlanResponse> planResponses = new ArrayList<>();
-        
-        for (SubscriptionPlan plan : plans) {
-            planResponses.add(convertPlanEntityToDto(plan));
+    private List<ServiceResponse> convertEntitiesToDtos(List<ServiceEntity> serviceEntities) {
+        if (serviceEntities.isEmpty()) {
+            return List.of();
         }
-        
-        return ServiceResponse.builder()
-                .id(serviceEntity.getId())
-                .name(serviceEntity.getServiceName())
-                .description(serviceEntity.getDescription())
-                .category(serviceEntity.getCategory())
-                .website(serviceEntity.getOfficialUrl())
-                .logoUrl(serviceEntity.getIconUrl())
-                .createdAt(serviceEntity.getCreatedAt())
-                .plans(planResponses)
-                .build();
+
+        List<Long> serviceIds = serviceEntities.stream()
+                .map(ServiceEntity::getId)
+                .toList();
+
+        Map<Long, List<SubscriptionPlanResponse>> plansByServiceId = subscriptionPlanRepository.findByServiceIdIn(serviceIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        plan -> plan.getService().getId(),
+                        Collectors.mapping(this::convertPlanEntityToDto, Collectors.toList())
+                ));
+
+        List<ServiceResponse> responses = new ArrayList<>();
+        for (ServiceEntity serviceEntity : serviceEntities) {
+            responses.add(ServiceResponse.builder()
+                    .id(serviceEntity.getId())
+                    .name(serviceEntity.getServiceName())
+                    .description(serviceEntity.getDescription())
+                    .category(serviceEntity.getCategory())
+                    .website(serviceEntity.getOfficialUrl())
+                    .logoUrl(serviceEntity.getIconUrl())
+                    .createdAt(serviceEntity.getCreatedAt())
+                    .plans(plansByServiceId.getOrDefault(serviceEntity.getId(), List.of()))
+                    .build());
+        }
+
+        return responses;
     }
     
     private SubscriptionPlanResponse convertPlanEntityToDto(SubscriptionPlan plan) {
@@ -197,7 +204,7 @@ public class ServiceService {
         ServiceEntity savedService = serviceRepository.save(service);
         log.info("새 서비스 생성됨: {}", savedService.getId());
 
-        return convertEntityToDto(savedService);
+        return convertEntitiesToDtos(List.of(savedService)).get(0);
     }
 
     @Transactional
@@ -216,7 +223,7 @@ public class ServiceService {
 
         log.info("서비스 업데이트됨: {}", serviceId);
 
-        return convertEntityToDto(service);
+        return convertEntitiesToDtos(List.of(service)).get(0);
     }
 
     @Transactional
