@@ -8,6 +8,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -46,6 +47,18 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 // WebSocket 엔드포인트 허용
                 .requestMatchers("/ws/**").permitAll()
+                // 공개 브라우징에서도 사용자별 확인 API는 인증 유지
+                .requestMatchers(HttpMethod.GET, "/api/v1/reviews/my", "/api/v1/reviews/service/*/check").authenticated()
+                // 공개 브라우징 페이지에서 사용하는 조회 API 허용
+                .requestMatchers(HttpMethod.GET, "/api/v1/services", "/api/v1/services/*", "/api/v1/services/category/*").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/services/compare").permitAll()
+                .requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/reviews/service/*",
+                    "/api/v1/reviews/service/*/rating",
+                    "/api/v1/reviews/*"
+                ).permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/preferences/questions").permitAll()
                 // 관리자 API는 ADMIN 역할 필요
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 // 나머지 API는 인증 필요
