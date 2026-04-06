@@ -2,6 +2,7 @@ package com.project.subing.repository;
 
 import com.project.subing.domain.preference.entity.PreferenceQuestion;
 import com.project.subing.domain.preference.enums.QuestionCategory;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -16,7 +17,8 @@ public interface PreferenceQuestionRepository extends JpaRepository<PreferenceQu
     List<PreferenceQuestion> findByCategory(QuestionCategory category);
 
     /**
-     * 순서대로 정렬된 모든 질문 조회
+     * 옵션까지 함께 로드한 순서별 질문 조회
      */
+    @EntityGraph(attributePaths = "options")
     List<PreferenceQuestion> findAllByOrderByOrderIndexAsc();
 }

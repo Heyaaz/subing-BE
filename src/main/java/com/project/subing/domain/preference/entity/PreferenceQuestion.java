@@ -36,6 +36,7 @@ public class PreferenceQuestion {
     private Integer orderIndex; // 질문 순서 (1~12)
 
     @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     @Builder.Default
     private List<PreferenceOption> options = new ArrayList<>();
 }
