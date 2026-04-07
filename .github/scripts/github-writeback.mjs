@@ -2,17 +2,20 @@
 
 import fs from 'node:fs/promises';
 
-const token = process.env.GITHUB_TOKEN;
+const token =
+  process.env.GITHUB_TOKEN ||
+  process.env.GH_TOKEN ||
+  process.env.GITHUB_PAT;
 
 if (!token) {
-  throw new Error('GITHUB_TOKEN environment variable is required');
+  throw new Error('One of GITHUB_TOKEN, GH_TOKEN, or GITHUB_PAT is required');
 }
 
 function usage() {
   console.error(
     [
       'Usage:',
-      '  node .github/scripts/github-writeback.mjs pr-review --repo owner/repo --number 123 --body-file /tmp/review.md [--commit-sha abc123]',
+      '  node .github/scripts/github-writeback.mjs pr-review --repo owner/repo --number 123 --body-file /tmp/review.md [--commit-sha abc123] [--event COMMENT|APPROVE|REQUEST_CHANGES]',
       '  node .github/scripts/github-writeback.mjs issue-comment --repo owner/repo --number 88 --body-file /tmp/comment.md',
     ].join('\n'),
   );
@@ -57,6 +60,17 @@ async function githubRequest(path, init = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+function normalizeReviewEvent(value) {
+  if (!value) return 'COMMENT';
+
+  const normalized = value.trim().toUpperCase().replace(/[- ]/g, '_');
+  if (['COMMENT', 'APPROVE', 'REQUEST_CHANGES'].includes(normalized)) {
+    return normalized;
+  }
+
+  throw new Error(`Unsupported review event: ${value}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repo = args.repo;
@@ -76,8 +90,9 @@ async function main() {
   }
 
   if (args.command === 'pr-review') {
+    const reviewEvent = normalizeReviewEvent(args.event);
     const payload = {
-      event: 'COMMENT',
+      event: reviewEvent,
       body,
     };
 
@@ -97,6 +112,7 @@ async function main() {
           type: 'pr-review',
           repo,
           number,
+          event: reviewEvent,
           review_id: review?.id ?? null,
           html_url: review?.html_url ?? null,
         },
