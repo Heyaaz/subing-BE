@@ -71,6 +71,19 @@ function normalizeReviewEvent(value) {
   throw new Error(`Unsupported review event: ${value}`);
 }
 
+function buildSignature(owner) {
+  return process.env.GITHUB_WRITEBACK_SIGNATURE?.trim() || `[${owner}의 Frog (clawbot) 🐸]`;
+}
+
+function withSignature(body, owner) {
+  const signature = buildSignature(owner);
+  if (body.includes(signature)) {
+    return body;
+  }
+
+  return `${body}\n\n${signature}`;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repo = args.repo;
@@ -84,10 +97,11 @@ async function main() {
     throw new Error(`Invalid repo: ${repo}`);
   }
 
-  const body = (await fs.readFile(bodyFile, 'utf8')).trim();
-  if (!body) {
+  const rawBody = (await fs.readFile(bodyFile, 'utf8')).trim();
+  if (!rawBody) {
     throw new Error('Body file is empty');
   }
+  const body = withSignature(rawBody, owner);
 
   if (args.command === 'pr-review') {
     const reviewEvent = normalizeReviewEvent(args.event);
