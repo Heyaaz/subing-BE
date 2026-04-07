@@ -46,7 +46,15 @@ jobs:
                 `author=${context.actor}`,
                 `url=${payload.pull_request.html_url}`,
                 `base=${payload.pull_request.base.ref}`,
+                `base_sha=${payload.pull_request.base.sha}`,
                 `head=${payload.pull_request.head.ref}`,
+                `head_sha=${payload.pull_request.head.sha}`,
+                `draft=${payload.pull_request.draft}`,
+                `changed_files=${payload.pull_request.changed_files}`,
+                `additions=${payload.pull_request.additions}`,
+                `deletions=${payload.pull_request.deletions}`,
+                `diff_url=${payload.pull_request.diff_url}`,
+                `patch_url=${payload.pull_request.patch_url}`,
                 'action=review',
               ];
             } else if (eventName === 'issues') {
