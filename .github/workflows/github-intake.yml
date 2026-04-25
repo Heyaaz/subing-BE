@@ -1,4 +1,4 @@
-name: GitHub Intake To Slack
+name: GitHub Intake To Discord
 
 on:
   workflow_dispatch:
@@ -13,21 +13,21 @@ permissions:
   contents: read
 
 jobs:
-  notify-slack:
+  notify-discord:
     runs-on: ubuntu-latest
     env:
-      BOT_MENTION: ${{ vars.OPENCLAW_GITHUB_BOT_MENTION }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      BOT_MENTION: ${{ vars.NOGADA_DISCORD_MENTION }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
     steps:
-      - name: Validate Slack configuration
+      - name: Validate Discord configuration
         run: |
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "SLACK_WEBHOOK_URL secret is not set."
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set."
             exit 1
           fi
 
-      - name: Build Slack payload
+      - name: Build Discord payload
         uses: actions/github-script@v7
         with:
           script: |
@@ -82,12 +82,15 @@ jobs:
 
             fs.writeFileSync(
               'payload.json',
-              JSON.stringify({ text: lines.join('\n') }),
+              JSON.stringify({
+                content: lines.join('\n'),
+                allowed_mentions: { parse: ['users'] },
+              }),
             );
 
-      - name: Post to Slack
+      - name: Post to Discord
         run: |
           curl -fsSL -X POST \
             -H 'Content-type: application/json' \
             --data @payload.json \
-            "$SLACK_WEBHOOK_URL"
+            "$DISCORD_WEBHOOK_URL"
